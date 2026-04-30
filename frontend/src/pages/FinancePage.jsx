@@ -1,0 +1,729 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { financeApi, packagesApi } from '../services/api';
+import { useTranslation } from 'react-i18next';
+import useMediaQuery from '../hooks/useMediaQuery';
+import BrandLoadingScreen from '../components/ui/BrandLoadingScreen';
+import { useAppFeedback } from '../components/ui/FeedbackProvider';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+const card = {
+  background: '#FFFFFF',
+  borderRadius: 20,
+  padding: '20px 24px',
+  boxShadow: '0 18px 40px rgba(16,37,60,0.08)',
+  border: '1px solid rgba(159,189,217,0.24)',
+};
+
+const labelStyle = {
+  display: 'block',
+  fontSize: 11,
+  fontWeight: 700,
+  color: '#10253C',
+  marginBottom: 7,
+  letterSpacing: '0.07em',
+};
+
+const emptyPackageForm = {
+  name: '',
+  description: '',
+  monthlyPrice: '',
+  sessionsPerWeek: '',
+  sessionsPerMonth: '',
+  hasOnlineSupport: true,
+};
+
+const statusColors = {
+  PAID: '#2D7A47',
+  PENDING: '#B66A17',
+  OVERDUE: '#C53131',
+};
+
+function formatCurrency(value) {
+  return `CHF ${Number(value || 0).toFixed(0)}`;
+}
+
+function PayBadge({ status }) {
+  const { t } = useTranslation();
+  const map = {
+    PAID: ['#EAF8EF', '#2D7A47', t('finance.paid')],
+    OVERDUE: ['#FDECEC', '#C53131', t('finance.overdue')],
+    PENDING: ['#FFF4E8', '#B66A17', t('finance.pending')],
+  };
+  const [bg, color, label] = map[status] || map.PENDING;
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        padding: '5px 11px',
+        borderRadius: 999,
+        fontWeight: 700,
+        background: bg,
+        color,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function KpiCard({ title, value, detail, accent }) {
+  return (
+    <div style={{ ...card, padding: '18px 20px', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', left: 0, top: 0, width: 6, height: '100%', background: accent }} />
+      <div style={{ marginLeft: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#6B86A3', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{title}</div>
+        <div style={{ fontSize: 28, lineHeight: 1.12, fontWeight: 800, color: '#10253C', marginTop: 8 }}>{value}</div>
+        <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 6 }}>{detail}</div>
+      </div>
+    </div>
+  );
+}
+
+function getFinanceFocus({ t, overdueCount, unpaidCount, pendingAmount, collectionRate }) {
+  if (overdueCount > 0) return t('finance.focusOverdue', { count: overdueCount });
+  if (unpaidCount > 0) return t('finance.focusPending', { count: unpaidCount, amount: formatCurrency(pendingAmount) });
+  if (collectionRate >= 100) return t('finance.focusHealthy');
+  return t('finance.focusStable', { pct: Math.round(collectionRate) });
+}
+
+export default function FinancePage() {
+  const { t, i18n } = useTranslation();
+  const { confirm, showError } = useAppFeedback();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isMobile = useMediaQuery('(max-width: 760px)');
+  const isTablet = useMediaQuery('(max-width: 1100px)');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'status');
+  const [data, setData] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [packages, setPackages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(null);
+  const [showPackageModal, setShowPackageModal] = useState(false);
+  const [editingPackage, setEditingPackage] = useState(null);
+  const [packageForm, setPackageForm] = useState(emptyPackageForm);
+  const [savingPackage, setSavingPackage] = useState(false);
+
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl && ['status', 'packages', 'stats'].includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [searchParams]);
+
+  const loadFinance = async () => {
+    const results = await Promise.allSettled([financeApi.overview(), financeApi.stats()]);
+    if (results[0].status === 'fulfilled') setData(results[0].value.data);
+    if (results[1].status === 'fulfilled') setStats(results[1].value.data);
+  };
+
+  const loadPackages = async () => {
+    const response = await packagesApi.list();
+    setPackages(response.data);
+  };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([loadFinance(), loadPackages()]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const togglePayment = async (clientId, currentStatus) => {
+    const newStatus = currentStatus === 'PAID' ? 'PENDING' : 'PAID';
+    setUpdating(clientId);
+    try {
+      const now = new Date();
+      await financeApi.updatePayment(clientId, {
+        month: now.getMonth() + 1,
+        year: now.getFullYear(),
+        status: newStatus,
+      });
+      await loadFinance();
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const openCreatePackage = () => {
+    setEditingPackage(null);
+    setPackageForm(emptyPackageForm);
+    setShowPackageModal(true);
+  };
+
+  const openEditPackage = (pkg) => {
+    setEditingPackage(pkg);
+    setPackageForm({
+      name: pkg.name || '',
+      description: pkg.description || '',
+      monthlyPrice: pkg.monthlyPrice ?? '',
+      sessionsPerWeek: pkg.sessionsPerWeek ?? '',
+      sessionsPerMonth: pkg.sessionsPerMonth ?? '',
+      hasOnlineSupport: pkg.hasOnlineSupport !== false,
+    });
+    setShowPackageModal(true);
+  };
+
+  const packageField = (key) => ({
+    value: packageForm[key],
+    onChange: (e) => setPackageForm({ ...packageForm, [key]: e.target.value }),
+  });
+
+  const onSavePackage = async (e) => {
+    e.preventDefault();
+    setSavingPackage(true);
+    try {
+      const payload = {
+        ...packageForm,
+        monthlyPrice: parseFloat(packageForm.monthlyPrice),
+        sessionsPerWeek: packageForm.sessionsPerWeek === '' ? null : Number(packageForm.sessionsPerWeek),
+        sessionsPerMonth: packageForm.sessionsPerMonth === '' ? null : Number(packageForm.sessionsPerMonth),
+      };
+
+      if (editingPackage?.id) await packagesApi.update(editingPackage.id, payload);
+      else await packagesApi.create(payload);
+
+      setShowPackageModal(false);
+      setEditingPackage(null);
+      setPackageForm(emptyPackageForm);
+      await Promise.all([loadPackages(), loadFinance()]);
+    } catch (err) {
+      showError(err.response?.data?.error || t('packages.errorSave'));
+    } finally {
+      setSavingPackage(false);
+    }
+  };
+
+  const onDeletePackage = async (pkg) => {
+    if (!(await confirm(t('packages.confirmDelete', { name: pkg.name })))) return;
+    try {
+      await packagesApi.delete(pkg.id);
+      await Promise.all([loadPackages(), loadFinance()]);
+    } catch (err) {
+      showError(err.response?.data?.error || t('packages.errorDelete'));
+    }
+  };
+
+  const switchTab = (tabKey) => {
+    setActiveTab(tabKey);
+    setSearchParams({ tab: tabKey }, { replace: true });
+  };
+
+  const locale = { en: 'en-US', pt: 'pt-PT', de: 'de-DE' }[i18n.language] || 'en-US';
+  const now = new Date();
+  const monthName = now.toLocaleDateString(locale, { month: 'long' });
+
+  const monthlyCharts = useMemo(() => {
+    if (!stats?.monthlySeries) return [];
+    return stats.monthlySeries.map((item) => {
+      const d = new Date(item.year, item.month - 1, 1);
+      return {
+        ...item,
+        label: d.toLocaleDateString(locale, { month: 'short' }),
+      };
+    });
+  }, [stats, locale]);
+
+  const packageCharts = (stats?.packageDistribution || []).map((pkg) => ({
+    ...pkg,
+    name: pkg.name || t('finance.noPackage'),
+  }));
+
+  const overview = useMemo(() => {
+    if (!data) return null;
+    const paidCount = data.clients.filter((client) => client.paymentStatus === 'PAID').length;
+    const overdueCount = data.clients.filter((client) => client.paymentStatus === 'OVERDUE').length;
+    const unpaidClients = data.clients
+      .filter((client) => client.paymentStatus !== 'PAID')
+      .sort((left, right) => {
+        const statusWeight = { OVERDUE: 0, PENDING: 1, PAID: 2 };
+        const byStatus = statusWeight[left.paymentStatus] - statusWeight[right.paymentStatus];
+        if (byStatus !== 0) return byStatus;
+        return Number(right.monthlyPrice || 0) - Number(left.monthlyPrice || 0);
+      });
+    const unpaidCount = unpaidClients.length;
+    const collectionRate = data.totalExpected > 0 ? (data.totalReceived / data.totalExpected) * 100 : 0;
+    const averageTicket = data.totalClients > 0 ? data.totalExpected / data.totalClients : 0;
+    const packageCoverage = data.totalClients > 0
+      ? ((stats?.totals?.clientsWithPackage || 0) / data.totalClients) * 100
+      : 0;
+
+    return {
+      paidCount,
+      overdueCount,
+      unpaidClients,
+      unpaidCount,
+      collectionRate,
+      averageTicket,
+      packageCoverage,
+      atRiskRevenue: data.totalPending,
+    };
+  }, [data, stats]);
+
+  const topPackage = packageCharts.length ? packageCharts[0] : null;
+
+  if (loading) return <BrandLoadingScreen />;
+  if (!data || !overview) return null;
+
+  const focusMessage = getFinanceFocus({
+    t,
+    overdueCount: overview.overdueCount,
+    unpaidCount: overview.unpaidCount,
+    pendingAmount: data.totalPending,
+    collectionRate: overview.collectionRate,
+  });
+
+  const renderStatusTab = () => (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 14, marginBottom: 18 }}>
+        <KpiCard title={t('finance.expected')} value={formatCurrency(data.totalExpected)} detail={t('finance.monthTarget')} accent="#10253C" />
+        <KpiCard title={t('finance.received')} value={formatCurrency(data.totalReceived)} detail={t('finance.alreadyCollected')} accent="#2D7A47" />
+        <KpiCard title={t('finance.pending')} value={formatCurrency(data.totalPending)} detail={t('finance.atRiskRevenue')} accent="#B66A17" />
+        <KpiCard title={t('finance.collectionRate')} value={`${Math.round(overview.collectionRate)}%`} detail={t('finance.paidClients', { count: overview.paidCount, total: data.totalClients })} accent="#5682B1" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : '1.15fr 1fr', gap: 16, marginBottom: 18 }}>
+        <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#10253C', marginBottom: 10 }}>{t('finance.billingProgress')}</div>
+          <div style={{ fontSize: 13, color: '#6B86A3', marginBottom: 14 }}>
+            {t('finance.statusOverview', { month: monthName, year: now.getFullYear() })}
+          </div>
+          <div style={{ height: 12, background: '#EDF5FC', borderRadius: 999, overflow: 'hidden' }}>
+            <div
+              style={{
+                height: '100%',
+                width: `${Math.min(overview.collectionRate, 100)}%`,
+                background: 'linear-gradient(90deg, #2D7A47 0%, #5682B1 100%)',
+                borderRadius: 999,
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 9, fontSize: 12, color: '#6B86A3' }}>
+            <span>{formatCurrency(0)}</span>
+            <strong style={{ color: '#10253C' }}>{formatCurrency(data.totalExpected)}</strong>
+          </div>
+          <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 14, background: '#F7FBFF', border: '1px solid rgba(159,189,217,0.3)', fontSize: 13, color: '#2C4F73', lineHeight: 1.5 }}>
+            {focusMessage}
+          </div>
+        </div>
+
+        <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#10253C', marginBottom: 6 }}>{t('finance.priorityFollowUp')}</div>
+          <div style={{ fontSize: 13, color: '#6B86A3', marginBottom: 12 }}>{t('finance.priorityFollowUpHint')}</div>
+
+          {overview.unpaidClients.length > 0 ? overview.unpaidClients.slice(0, 6).map((client, index) => (
+            <div
+              key={client.clientId}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 0',
+                borderTop: index === 0 ? '1px solid rgba(159,189,217,0.24)' : 'none',
+                borderBottom: '1px solid rgba(159,189,217,0.24)',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#10253C' }}>{client.clientName}</div>
+                <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 2 }}>{formatCurrency(client.monthlyPrice)}</div>
+              </div>
+              <PayBadge status={client.paymentStatus} />
+            </div>
+          )) : (
+            <div style={{ fontSize: 13, color: '#6B86A3', marginTop: 12 }}>{t('finance.allPaymentsSettled')}</div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: 8, marginBottom: 8 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#10253C' }}>{t('finance.statusByClient')}</div>
+          <div style={{ fontSize: 12, color: '#6B86A3' }}>{t('finance.statusHelp')}</div>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 660, borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(159,189,217,0.24)' }}>
+                {[t('finance.clientCol'), t('finance.monthlyFeeCol'), t('finance.statusCol'), t('finance.actionCol')].map((label, index) => (
+                  <th
+                    key={label}
+                    style={{
+                      textAlign: index === 0 ? 'left' : 'center',
+                      padding: '8px 8px 12px',
+                      color: '#6B86A3',
+                      fontSize: 11,
+                      letterSpacing: '0.08em',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {label.toUpperCase()}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.clients.map((client, index) => (
+                <tr key={client.clientId} style={{ borderBottom: index < data.clients.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
+                  <td style={{ padding: '14px 8px 14px 0', color: '#10253C', fontWeight: 700 }}>{client.clientName}</td>
+                  <td style={{ textAlign: 'center', padding: '14px 8px', color: '#10253C', fontWeight: 700 }}>{formatCurrency(client.monthlyPrice)}</td>
+                  <td style={{ textAlign: 'center', padding: '14px 8px' }}><PayBadge status={client.paymentStatus} /></td>
+                  <td style={{ textAlign: 'right', padding: '14px 0' }}>
+                    <button
+                      type="button"
+                      onClick={() => togglePayment(client.clientId, client.paymentStatus)}
+                      disabled={updating === client.clientId}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        padding: '7px 14px',
+                        border: '1px solid #739EC9',
+                        borderRadius: 10,
+                        background: '#FFFFFF',
+                        color: '#2C4F73',
+                        cursor: updating === client.clientId ? 'not-allowed' : 'pointer',
+                        opacity: updating === client.clientId ? 0.55 : 1,
+                      }}
+                    >
+                      {client.paymentStatus === 'PAID' ? t('finance.markPending') : t('finance.markPaid')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+
+  const renderPackagesTab = () => (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : 'repeat(3, minmax(0,1fr))', gap: 14, marginBottom: 18 }}>
+        <KpiCard title={t('finance.packageCount')} value={packages.length} detail={t('finance.portfolioOverview')} accent="#10253C" />
+        <KpiCard title={t('finance.clientsWithPackage')} value={stats?.totals?.clientsWithPackage || 0} detail={t('finance.activeInPackages')} accent="#5682B1" />
+        <KpiCard title={t('finance.topPackageShort')} value={topPackage?.name || t('finance.noTopPackage')} detail={topPackage ? `${topPackage.clients} ${t('nav.clients').toLowerCase()}` : t('packages.noPackages')} accent="#2D7A47" />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', marginBottom: 18, flexDirection: isMobile ? 'column' : 'row', gap: 12 }}>
+        <div>
+          <h2 style={{ fontSize: isMobile ? 19 : 22, margin: 0, color: '#10253C', fontWeight: 800 }}>{t('packages.title')}</h2>
+          <p style={{ fontSize: 13, color: '#6B86A3', margin: '4px 0 0' }}>{t('packages.subtitle')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={openCreatePackage}
+          style={{
+            border: 'none',
+            borderRadius: 12,
+            padding: '11px 18px',
+            background: 'linear-gradient(135deg, #10253C 0%, #5682B1 100%)',
+            color: '#FFFFFF',
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: 'pointer',
+            width: isMobile ? '100%' : 'auto',
+          }}
+        >
+          {t('packages.newPackage')}
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(270px, 1fr))', gap: 14 }}>
+        {packages.map((pkg) => (
+          <div key={pkg.id} style={{ ...card, padding: '18px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 18, color: '#10253C' }}>{pkg.name}</div>
+                <div style={{ marginTop: 6, fontSize: 13, color: '#6B86A3' }}>{formatCurrency(pkg.monthlyPrice)} {t('packages.monthly')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button type="button" onClick={() => openEditPackage(pkg)} style={{ border: '1px solid #9FBDD9', color: '#2C4F73', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}>{t('common.edit')}</button>
+                <button type="button" onClick={() => onDeletePackage(pkg)} style={{ border: '1px solid #D9A2A2', color: '#9F4A4A', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}>{t('packages.delete')}</button>
+              </div>
+            </div>
+
+            {pkg.description && <p style={{ marginTop: 10, marginBottom: 0, fontSize: 13, color: '#3A4F63', lineHeight: 1.45 }}>{pkg.description}</p>}
+
+            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {pkg.sessionsPerWeek ? <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 999, background: '#EDF5FC', color: '#2C4F73', fontWeight: 700 }}>{pkg.sessionsPerWeek}x {t('packages.perWeek')}</span> : null}
+              {pkg.sessionsPerMonth ? <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 999, background: '#EDF5FC', color: '#2C4F73', fontWeight: 700 }}>{pkg.sessionsPerMonth}x {t('packages.perMonth')}</span> : null}
+              {pkg.hasOnlineSupport ? <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 999, background: '#EDF5FC', color: '#2C4F73', fontWeight: 700 }}>{t('packages.onlineSupport')}</span> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {packages.length === 0 && (
+        <div style={{ ...card, textAlign: 'center', padding: isMobile ? '32px 20px' : '56px 40px', marginTop: 14 }}>
+          <p style={{ color: '#6B86A3', marginBottom: 18, fontSize: 14 }}>{t('packages.noPackages')}</p>
+          <button
+            type="button"
+            onClick={openCreatePackage}
+            style={{
+              border: 'none',
+              borderRadius: 12,
+              padding: '11px 22px',
+              background: 'linear-gradient(135deg, #10253C 0%, #5682B1 100%)',
+              color: '#FFFFFF',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: 'pointer',
+            }}
+          >
+            {t('packages.createFirst')}
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+  const renderStatsTab = () => (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
+        <KpiCard title={t('finance.totalClients')} value={stats?.totals?.totalClients || 0} detail={t('finance.monthTarget')} accent="#10253C" />
+        <KpiCard title={t('finance.clientsWithPackage')} value={stats?.totals?.clientsWithPackage || 0} detail={t('finance.activeInPackages')} accent="#5682B1" />
+        <KpiCard title={t('finance.avgCollectionRate')} value={`${Math.round(stats?.totals?.averageCollectionRate || 0)}%`} detail={t('finance.lastMonths')} accent="#2D7A47" />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+        <div style={card}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.collectionTrend')}</div>
+          <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.collectionTrendHint')}</div>
+          <div style={{ width: '100%', height: 280 }}>
+            <ResponsiveContainer>
+              <LineChart data={monthlyCharts} margin={{ left: 8, right: 8, top: 4, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(159,189,217,0.24)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#6B86A3' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: '#6B86A3' }} tickLine={false} axisLine={false} width={80} />
+                <Tooltip formatter={(value) => formatCurrency(value)} />
+                <Line type="monotone" dataKey="expected" stroke="#739EC9" strokeWidth={2} dot={false} name={t('finance.expected')} />
+                <Line type="monotone" dataKey="received" stroke="#2D7A47" strokeWidth={3} dot={false} name={t('finance.received')} />
+                <Line type="monotone" dataKey="pending" stroke="#B66A17" strokeWidth={2} dot={false} name={t('finance.pending')} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div style={card}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.clientsPerPackage')}</div>
+          <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.revenueByPackage')}</div>
+          <div style={{ width: '100%', height: 280 }}>
+            <ResponsiveContainer>
+              <BarChart data={packageCharts} layout="vertical" margin={{ left: 8, right: 8, top: 4, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(159,189,217,0.24)" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: '#6B86A3' }} tickLine={false} axisLine={false} />
+                <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 12, fill: '#2C4F73' }} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(value, key) => (key === 'revenue' ? formatCurrency(value) : value)} />
+                <Bar dataKey="clients" name={t('nav.clients')} fill="#5682B1" radius={[0, 8, 8, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <div style={{ padding: isMobile ? '16px 14px 20px' : '28px 32px', maxWidth: 1340, margin: '0 auto' }}>
+      <section
+        style={{
+          background: 'linear-gradient(135deg, #10253C 0%, #1D3C5A 52%, #5682B1 100%)',
+          borderRadius: 28,
+          padding: isMobile ? '22px 18px' : '28px 30px',
+          color: '#FFFFFF',
+          boxShadow: '0 24px 50px rgba(16,37,60,0.24)',
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: isTablet ? 'column' : 'row', justifyContent: 'space-between', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C8DBED', marginBottom: 10 }}>
+              {monthName} {now.getFullYear()}
+            </div>
+            <h1 style={{ margin: 0, fontSize: isMobile ? 24 : 34, lineHeight: 1.06, fontWeight: 800 }}>{t('finance.title')}</h1>
+            <p style={{ margin: '12px 0 0', maxWidth: 680, fontSize: isMobile ? 14 : 16, lineHeight: 1.55, color: '#E4EFF9' }}>
+              {t('finance.subtitle')}
+            </p>
+          </div>
+          <div style={{ minWidth: isTablet ? 'auto' : 320, alignSelf: 'stretch' }}>
+            <div style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 16, padding: '14px 16px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#C8DBED' }}>{t('finance.todayPriority')}</div>
+              <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.45, fontWeight: 600 }}>{focusMessage}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+        {[
+          { key: 'status', label: t('finance.statusByClientTab') },
+          { key: 'packages', label: t('finance.monthlyPackagesTab') },
+          { key: 'stats', label: t('finance.statsDashboardsTab') },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => switchTab(tab.key)}
+            style={{
+              border: activeTab === tab.key ? '1px solid #10253C' : '1px solid #9FBDD9',
+              background: activeTab === tab.key ? '#10253C' : '#FFFFFF',
+              color: activeTab === tab.key ? '#FFFFFF' : '#2C4F73',
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '8px 13px',
+              cursor: 'pointer',
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'status' && renderStatusTab()}
+      {activeTab === 'packages' && renderPackagesTab()}
+      {activeTab === 'stats' && renderStatsTab()}
+
+      {showPackageModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: isMobile ? '16px 16px 0 0' : 20,
+              padding: isMobile ? '22px 16px 18px' : '32px 36px',
+              width: '100%',
+              maxWidth: isMobile ? '100%' : 520,
+              boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
+              maxHeight: isMobile ? '92vh' : '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: '#000000' }}>{editingPackage ? t('packages.modal.editTitle') : t('packages.modal.createTitle')}</h2>
+                <p style={{ fontSize: 12, color: '#739EC9', marginTop: 3 }}>{t('packages.modal.subtitle')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPackageModal(false)}
+                style={{
+                  background: '#FFFFFF',
+                  border: 'none',
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  fontSize: 18,
+                  color: '#5682B1',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                x
+              </button>
+            </div>
+            <form onSubmit={onSavePackage}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('packages.modal.name')}</label>
+                <input type="text" placeholder={t('packages.modal.namePlaceholder')} {...packageField('name')} required />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('packages.modal.monthlyPrice')}</label>
+                <input type="number" step="0.01" min="0" placeholder="450" {...packageField('monthlyPrice')} required />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('packages.modal.sessionsPerWeek')}</label>
+                <input type="number" min="0" placeholder="1" {...packageField('sessionsPerWeek')} />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('packages.modal.sessionsPerMonth')}</label>
+                <input type="number" min="0" placeholder="4" {...packageField('sessionsPerMonth')} />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('packages.modal.description')}</label>
+                <textarea {...packageField('description')} placeholder={t('packages.modal.descriptionPlaceholder')} rows={3} style={{ resize: 'vertical' }} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#2C4F73', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!packageForm.hasOnlineSupport}
+                    onChange={(e) => setPackageForm({ ...packageForm, hasOnlineSupport: e.target.checked })}
+                  />
+                  {t('packages.modal.onlineSupport')}
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isMobile ? 'column-reverse' : 'row' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPackageModal(false)}
+                  style={{
+                    padding: '10px 18px',
+                    border: '1.5px solid #739EC9',
+                    borderRadius: 10,
+                    background: 'none',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: '#5682B1',
+                    cursor: 'pointer',
+                    width: isMobile ? '100%' : 'auto',
+                  }}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPackage}
+                  style={{
+                    padding: '10px 22px',
+                    background: savingPackage ? '#739EC9' : 'linear-gradient(135deg, #5682B1 0%, #739EC9 100%)',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 10,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: savingPackage ? 'not-allowed' : 'pointer',
+                    width: isMobile ? '100%' : 'auto',
+                  }}
+                >
+                  {savingPackage ? t('packages.modal.saving') : editingPackage ? t('packages.modal.update') : t('packages.modal.create')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
