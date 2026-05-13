@@ -4,10 +4,12 @@ import JSON5 from 'json5';
 import { randomBytes } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
-import { prisma } from '../config/database.js';
+import { prisma, supabase } from '../config/database.js';
 import { AppError } from '../utils/AppError.js';
 
 const pdfParse = pdfParseModule.default ?? pdfParseModule;
+const CLIENT_FILES_BUCKET = process.env.CLIENT_FILES_BUCKET || 'client-files';
+let clientFilesBucketEnsured = false;
 
 const SUPPORTED_LANGUAGES = new Set(['en', 'pt', 'de']);
 const DEFAULT_ONLINE_CLIENT_LINK_TTL_HOURS = 72;
@@ -698,6 +700,101 @@ function deleteFileIfExists(urlPath) {
   }
 }
 
+function isSupabaseStorageUrl(urlPath) {
+  return String(urlPath || '').startsWith('supabase://');
+}
+
+function buildSupabaseStorageUrl(bucket, objectPath) {
+  return `supabase://${bucket}/${objectPath}`;
+}
+
+function parseSupabaseStorageUrl(urlPath) {
+  const raw = String(urlPath || '');
+  if (!isSupabaseStorageUrl(raw)) return null;
+  const remainder = raw.slice('supabase://'.length);
+  const slashIndex = remainder.indexOf('/');
+  if (slashIndex <= 0) return null;
+
+  return {
+    bucket: remainder.slice(0, slashIndex),
+    objectPath: remainder.slice(slashIndex + 1),
+  };
+}
+
+function sanitizeStorageName(value) {
+  return String(value || 'file')
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    || 'file';
+}
+
+async function ensureClientFilesBucket() {
+  if (clientFilesBucketEnsured) return;
+
+  const { error } = await supabase.storage.createBucket(CLIENT_FILES_BUCKET, {
+    public: false,
+    fileSizeLimit: 20 * 1024 * 1024,
+  });
+
+  if (error && !String(error.message || '').toLowerCase().includes('already')) {
+    throw new AppError(`Não foi possível preparar o bucket de arquivos: ${error.message}`, 500);
+  }
+
+  clientFilesBucketEnsured = true;
+}
+
+async function uploadClientFileToStorage({ trainerId, clientId, file }) {
+  await ensureClientFilesBucket();
+
+  const safeName = sanitizeStorageName(file.originalname || file.filename || 'file');
+  const objectPath = `${trainerId}/${clientId}/${Date.now()}-${Math.round(Math.random() * 1e9)}-${safeName}`;
+  const fileBuffer = file.buffer || fs.readFileSync(file.path);
+
+  const { error } = await supabase.storage
+    .from(CLIENT_FILES_BUCKET)
+    .upload(objectPath, fileBuffer, {
+      contentType: file.mimetype || 'application/octet-stream',
+      upsert: false,
+    });
+
+  if (error) {
+    throw new AppError(`Não foi possível guardar o ficheiro: ${error.message}`, 500);
+  }
+
+  return buildSupabaseStorageUrl(CLIENT_FILES_BUCKET, objectPath);
+}
+
+async function deleteStoredClientFile(urlPath) {
+  if (!urlPath) return;
+
+  const storageRef = parseSupabaseStorageUrl(urlPath);
+  if (storageRef) {
+    const { error } = await supabase.storage.from(storageRef.bucket).remove([storageRef.objectPath]);
+    if (error && !String(error.message || '').toLowerCase().includes('not found')) {
+      throw new AppError(`Não foi possível remover o ficheiro armazenado: ${error.message}`, 500);
+    }
+    return;
+  }
+
+  deleteFileIfExists(urlPath);
+}
+
+async function downloadStoredClientFile(urlPath) {
+  const storageRef = parseSupabaseStorageUrl(urlPath);
+  if (!storageRef) return null;
+
+  const { data, error } = await supabase.storage.from(storageRef.bucket).download(storageRef.objectPath);
+  if (error) {
+    const message = String(error.message || '');
+    if (message.toLowerCase().includes('not found')) return null;
+    throw new AppError(`Não foi possível descarregar o ficheiro: ${message}`, 500);
+  }
+
+  return Buffer.from(await data.arrayBuffer());
+}
+
 async function findClientFileFolderForTrainer({ trainerId, clientId, folderId }) {
   const folder = await prisma.clientFileFolder.findFirst({
     where: { id: folderId, trainerId, clientId },
@@ -825,7 +922,7 @@ export const deleteClientFileFolder = async (req, res, next) => {
     });
 
     for (const item of items) {
-      if (item.type === 'FILE') deleteFileIfExists(item.fileUrl);
+      if (item.type === 'FILE') await deleteStoredClientFile(item.fileUrl);
     }
 
     await prisma.clientFileFolder.delete({ where: { id: folder.id } });
@@ -869,6 +966,12 @@ export const createClientFileItem = async (req, res, next) => {
     } else {
       if (!req.file) throw new AppError('Ficheiro não enviado.', 400);
 
+      const fileUrl = await uploadClientFileToStorage({
+        trainerId: trainer.id,
+        clientId: client.id,
+        file: req.file,
+      });
+
       itemData = {
         trainerId: trainer.id,
         clientId: client.id,
@@ -878,7 +981,7 @@ export const createClientFileItem = async (req, res, next) => {
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
         fileSize: req.file.size,
-        fileUrl: `/uploads/${req.file.filename}`,
+        fileUrl,
       };
     }
 
@@ -898,7 +1001,7 @@ export const deleteClientFileItem = async (req, res, next) => {
       itemId: req.params.itemId,
     });
 
-    if (item.type === 'FILE') deleteFileIfExists(item.fileUrl);
+    if (item.type === 'FILE') await deleteStoredClientFile(item.fileUrl);
     await prisma.clientFileItem.delete({ where: { id: item.id } });
 
     res.json({ message: 'Arquivo removido com sucesso.' });
@@ -920,8 +1023,17 @@ export const downloadClientFileItem = async (req, res, next) => {
       throw new AppError('Este item não é um ficheiro para download.', 400);
     }
 
+    const storedFileBuffer = await downloadStoredClientFile(item.fileUrl);
+    if (storedFileBuffer) {
+      res.setHeader('Content-Type', item.mimeType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(item.fileName || 'ficheiro')}"`);
+      return res.send(storedFileBuffer);
+    }
+
     const absolutePath = resolveAbsoluteUploadPath(item.fileUrl);
-    if (!fs.existsSync(absolutePath)) throw new AppError('Ficheiro não encontrado no servidor.', 404);
+    if (!fs.existsSync(absolutePath)) {
+      throw new AppError('Ficheiro não encontrado no servidor. Se foi enviado em produção antes desta correção, pode ser necessário reenviar.', 404);
+    }
     res.download(absolutePath, item.fileName || 'ficheiro');
   } catch (err) { next(err); }
 };
