@@ -1,7 +1,9 @@
 import { prisma } from '../config/database.js';
 import { AppError } from '../utils/AppError.js';
 import JSON5 from 'json5';
-import pdfParse from 'pdf-parse';
+import * as pdfParseModule from 'pdf-parse';
+
+const pdfParse = pdfParseModule.default ?? pdfParseModule;
 
 function getClaudeTextFromResponse(data) {
   return (data?.content || [])

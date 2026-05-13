@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { prisma } from '../config/database.js';
 import { AppError } from '../utils/AppError.js';
-import pdfParse from 'pdf-parse';
+import * as pdfParseModule from 'pdf-parse';
 import JSON5 from 'json5';
+
+const pdfParse = pdfParseModule.default ?? pdfParseModule;
 
 const DEFAULT_CHECKIN_LINK_TTL_HOURS = 72;
 

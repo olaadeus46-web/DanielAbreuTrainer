@@ -1,9 +1,13 @@
 import bcrypt from 'bcryptjs';
-import pdfParse from 'pdf-parse';
+import * as pdfParseModule from 'pdf-parse';
 import JSON5 from 'json5';
 import { randomBytes } from 'node:crypto';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '../config/database.js';
 import { AppError } from '../utils/AppError.js';
+
+const pdfParse = pdfParseModule.default ?? pdfParseModule;
 
 const SUPPORTED_LANGUAGES = new Set(['en', 'pt', 'de']);
 const DEFAULT_ONLINE_CLIENT_LINK_TTL_HOURS = 72;
@@ -655,6 +659,272 @@ async function resolvePackageForTrainer(packageId, trainerId) {
   if (!pkg) throw new AppError('Pacote inválido para este trainer.', 400);
   return pkg;
 }
+
+function normalizeFolderName(value) {
+  return String(value || '').trim();
+}
+
+function normalizeItemTitle(value) {
+  return String(value || '').trim();
+}
+
+function normalizeExternalUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  try {
+    const url = new URL(raw);
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new AppError('O link externo deve começar por http:// ou https://.', 400);
+    }
+    return url.toString();
+  } catch {
+    throw new AppError('Link externo inválido.', 400);
+  }
+}
+
+function resolveAbsoluteUploadPath(urlPath) {
+  const normalized = String(urlPath || '').replace(/^\/+/, '');
+  return path.resolve(process.cwd(), normalized);
+}
+
+function deleteFileIfExists(urlPath) {
+  if (!urlPath) return;
+  const absolute = resolveAbsoluteUploadPath(urlPath);
+  try {
+    if (fs.existsSync(absolute)) fs.unlinkSync(absolute);
+  } catch {
+    // Ignore file cleanup issues to avoid blocking main flow.
+  }
+}
+
+async function findClientFileFolderForTrainer({ trainerId, clientId, folderId }) {
+  const folder = await prisma.clientFileFolder.findFirst({
+    where: { id: folderId, trainerId, clientId },
+  });
+  if (!folder) throw new AppError('Pasta não encontrada.', 404);
+  return folder;
+}
+
+async function findClientFileItemForTrainer({ trainerId, clientId, itemId }) {
+  const item = await prisma.clientFileItem.findFirst({
+    where: { id: itemId, trainerId, clientId },
+  });
+  if (!item) throw new AppError('Arquivo não encontrado.', 404);
+  return item;
+}
+
+// GET /api/clients/:id/files/folders
+export const listClientFileFolders = async (req, res, next) => {
+  try {
+    const trainer = await getTrainerOrThrow(req.userId);
+    const client = await findClientForTrainer(req.params.id, trainer.id);
+
+    const folders = await prisma.clientFileFolder.findMany({
+      where: { trainerId: trainer.id, clientId: client.id },
+      orderBy: { name: 'asc' },
+    });
+
+    const folderIds = folders.map((folder) => folder.id);
+    const items = folderIds.length
+      ? await prisma.clientFileItem.findMany({
+          where: { trainerId: trainer.id, clientId: client.id, folderId: { in: folderIds } },
+          orderBy: [{ createdAt: 'desc' }],
+        })
+      : [];
+
+    const itemsByFolderId = new Map();
+    for (const item of items) {
+      const bucket = itemsByFolderId.get(item.folderId) || [];
+      bucket.push(item);
+      itemsByFolderId.set(item.folderId, bucket);
+    }
+
+    const payload = folders.map((folder) => ({
+      ...folder,
+      items: itemsByFolderId.get(folder.id) || [],
+    }));
+
+    res.json(payload);
+  } catch (err) { next(err); }
+};
+
+// POST /api/clients/:id/files/folders
+export const createClientFileFolder = async (req, res, next) => {
+  try {
+    const trainer = await getTrainerOrThrow(req.userId);
+    const client = await findClientForTrainer(req.params.id, trainer.id);
+    const name = normalizeFolderName(req.body?.name);
+
+    if (!name) throw new AppError('Nome da pasta é obrigatório.', 400);
+
+    const existing = await prisma.clientFileFolder.findFirst({
+      where: { trainerId: trainer.id, clientId: client.id, name },
+    });
+    if (existing) throw new AppError('Já existe uma pasta com esse nome.', 409);
+
+    const folder = await prisma.clientFileFolder.create({
+      data: {
+        trainerId: trainer.id,
+        clientId: client.id,
+        name,
+      },
+    });
+
+    res.status(201).json(folder);
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/clients/:id/files/folders/:folderId
+export const updateClientFileFolder = async (req, res, next) => {
+  try {
+    const trainer = await getTrainerOrThrow(req.userId);
+    const client = await findClientForTrainer(req.params.id, trainer.id);
+    const folder = await findClientFileFolderForTrainer({
+      trainerId: trainer.id,
+      clientId: client.id,
+      folderId: req.params.folderId,
+    });
+
+    const nextName = normalizeFolderName(req.body?.name);
+    if (!nextName) throw new AppError('Nome da pasta é obrigatório.', 400);
+
+    const conflict = await prisma.clientFileFolder.findFirst({
+      where: {
+        trainerId: trainer.id,
+        clientId: client.id,
+        name: nextName,
+      },
+    });
+    if (conflict && conflict.id !== folder.id) {
+      throw new AppError('Já existe uma pasta com esse nome.', 409);
+    }
+
+    const updated = await prisma.clientFileFolder.update({
+      where: { id: folder.id },
+      data: { name: nextName },
+    });
+
+    res.json(updated);
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/clients/:id/files/folders/:folderId
+export const deleteClientFileFolder = async (req, res, next) => {
+  try {
+    const trainer = await getTrainerOrThrow(req.userId);
+    const client = await findClientForTrainer(req.params.id, trainer.id);
+    const folder = await findClientFileFolderForTrainer({
+      trainerId: trainer.id,
+      clientId: client.id,
+      folderId: req.params.folderId,
+    });
+
+    const items = await prisma.clientFileItem.findMany({
+      where: { trainerId: trainer.id, clientId: client.id, folderId: folder.id },
+    });
+
+    for (const item of items) {
+      if (item.type === 'FILE') deleteFileIfExists(item.fileUrl);
+    }
+
+    await prisma.clientFileFolder.delete({ where: { id: folder.id } });
+    res.json({ message: 'Pasta removida com sucesso.' });
+  } catch (err) { next(err); }
+};
+
+// POST /api/clients/:id/files/items
+export const createClientFileItem = async (req, res, next) => {
+  try {
+    const trainer = await getTrainerOrThrow(req.userId);
+    const client = await findClientForTrainer(req.params.id, trainer.id);
+
+    const folderId = String(req.body?.folderId || '').trim();
+    if (!folderId) throw new AppError('folderId é obrigatório.', 400);
+
+    await findClientFileFolderForTrainer({
+      trainerId: trainer.id,
+      clientId: client.id,
+      folderId,
+    });
+
+    const typeRaw = String(req.body?.type || (req.file ? 'FILE' : 'LINK')).toUpperCase();
+    const type = typeRaw === 'LINK' ? 'LINK' : 'FILE';
+    const title = normalizeItemTitle(req.body?.title || req.file?.originalname);
+    if (!title) throw new AppError('Título é obrigatório.', 400);
+
+    let itemData = null;
+    if (type === 'LINK') {
+      const externalUrl = normalizeExternalUrl(req.body?.externalUrl);
+      if (!externalUrl) throw new AppError('externalUrl é obrigatório para links.', 400);
+
+      itemData = {
+        trainerId: trainer.id,
+        clientId: client.id,
+        folderId,
+        title,
+        type,
+        externalUrl,
+      };
+    } else {
+      if (!req.file) throw new AppError('Ficheiro não enviado.', 400);
+
+      itemData = {
+        trainerId: trainer.id,
+        clientId: client.id,
+        folderId,
+        title,
+        type,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        fileUrl: `/uploads/${req.file.filename}`,
+      };
+    }
+
+    const item = await prisma.clientFileItem.create({ data: itemData });
+    res.status(201).json(item);
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/clients/:id/files/items/:itemId
+export const deleteClientFileItem = async (req, res, next) => {
+  try {
+    const trainer = await getTrainerOrThrow(req.userId);
+    const client = await findClientForTrainer(req.params.id, trainer.id);
+    const item = await findClientFileItemForTrainer({
+      trainerId: trainer.id,
+      clientId: client.id,
+      itemId: req.params.itemId,
+    });
+
+    if (item.type === 'FILE') deleteFileIfExists(item.fileUrl);
+    await prisma.clientFileItem.delete({ where: { id: item.id } });
+
+    res.json({ message: 'Arquivo removido com sucesso.' });
+  } catch (err) { next(err); }
+};
+
+// GET /api/clients/:id/files/items/:itemId/download
+export const downloadClientFileItem = async (req, res, next) => {
+  try {
+    const trainer = await getTrainerOrThrow(req.userId);
+    const client = await findClientForTrainer(req.params.id, trainer.id);
+    const item = await findClientFileItemForTrainer({
+      trainerId: trainer.id,
+      clientId: client.id,
+      itemId: req.params.itemId,
+    });
+
+    if (item.type !== 'FILE' || !item.fileUrl) {
+      throw new AppError('Este item não é um ficheiro para download.', 400);
+    }
+
+    const absolutePath = resolveAbsoluteUploadPath(item.fileUrl);
+    if (!fs.existsSync(absolutePath)) throw new AppError('Ficheiro não encontrado no servidor.', 404);
+    res.download(absolutePath, item.fileName || 'ficheiro');
+  } catch (err) { next(err); }
+};
 
 // GET /api/clients
 export const listClients = async (req, res, next) => {
