@@ -261,7 +261,7 @@ export function FeedbackProvider({ children }) {
 
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#739EC9', marginBottom: 4 }}>
-                  FitCoach
+                  {t('nav.platform')}
                 </div>
                 <h2 style={{ margin: 0, fontSize: 20, lineHeight: 1.2, color: '#000000' }}>
                   {confirmState.title || confirmState.message}

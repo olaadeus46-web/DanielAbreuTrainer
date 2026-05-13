@@ -25,7 +25,7 @@ function resolveCheckInLinkExpiry(hoursInput) {
 }
 
 function buildPublicCheckInUrl(token) {
-  const origin = String(process.env.PUBLIC_APP_URL || process.env.CORS_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
+  const origin = String(process.env.PUBLIC_APP_URL || process.env.CORS_ORIGIN || 'https://danieltrainer.com').replace(/\/$/, '');
   return `${origin}/check-in/${token}`;
 }
 

@@ -100,6 +100,9 @@ function buildDefaultMessageTemplate(t, type, isFollowUp = false) {
   if (type === 'FEEDBACK') {
     return t(isFollowUp ? 'automations.templates.feedbackFollowUp' : 'automations.templates.feedback');
   }
+  if (type === 'MESSAGE_ONLY') {
+    return t(isFollowUp ? 'automations.templates.messageOnlyFollowUp' : 'automations.templates.messageOnly');
+  }
   return t(isFollowUp ? 'automations.templates.checkInFollowUp' : 'automations.templates.checkIn');
 }
 
@@ -215,8 +218,8 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
 
           <div style={{ marginBottom: 16 }}>
             <span style={label}>{t('automations.modal.type')}</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {['CHECK_IN', 'FEEDBACK'].map((value) => (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {['CHECK_IN', 'FEEDBACK', 'MESSAGE_ONLY'].map((value) => (
                 <button
                   key={value}
                   type="button"
@@ -307,7 +310,9 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
             </div>
 
             <textarea style={textarea} required value={form.messageTemplate} onChange={(event) => setForm({ ...form, messageTemplate: event.target.value })} placeholder={t('automations.modal.messagePlaceholder')} />
-            <p style={{ margin: '5px 0 0', fontSize: 11.5, color: '#5682B1' }}>{t('automations.modal.messageHint')}</p>
+            <p style={{ margin: '5px 0 0', fontSize: 11.5, color: '#5682B1' }}>
+              {form.type === 'MESSAGE_ONLY' ? t('automations.modal.messageHintMessageOnly') : t('automations.modal.messageHint')}
+            </p>
           </div>
 
           <div style={{ marginBottom: 20 }}>
@@ -365,7 +370,7 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
 
 function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, onEdit, onCreateFollowUp, isNestedFollowUp = false }) {
   const { t, i18n } = useTranslation();
-  const { showError } = useAppFeedback();
+  const { confirm, showError } = useAppFeedback();
   const [executing, setExecuting] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -373,7 +378,7 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
   const formatDate = (iso) => (iso ? new Date(iso).toLocaleString(i18n.language === 'pt' ? 'pt-PT' : i18n.language === 'de' ? 'de-DE' : 'en-GB') : '—');
 
   async function handleDelete() {
-    if (!window.confirm(t('automations.deleteConfirm', { name: automation.name }))) return;
+    if (!(await confirm(t('automations.deleteConfirm', { name: automation.name })))) return;
     try {
       await automationsApi.delete(automation.id);
       onDeleted(automation.id);
@@ -397,7 +402,7 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
 
   const results = automation.results || [];
   const isFollowUp = !!automation.parentAutomationId;
-  const formLabel = automation.type === 'FEEDBACK' ? t('automations.type.FEEDBACK') : t('automations.type.CHECK_IN');
+  const formLabel = automation.type === 'FEEDBACK' ? t('automations.type.FEEDBACK') : automation.type === 'MESSAGE_ONLY' ? t('automations.type.MESSAGE_ONLY') : t('automations.type.CHECK_IN');
 
   return (
     <>
@@ -435,9 +440,15 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
           </div>
 
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 10, background: '#FFF8E1', border: '1px solid #F3D690', color: '#8A5A00', fontSize: 11, fontWeight: 800 }}>
-            <span>{t('automations.formSent')}</span>
-            <span style={{ opacity: 0.45 }}>|</span>
-            <span>{formLabel}</span>
+            {automation.type === 'MESSAGE_ONLY' ? (
+              <span>{t('automations.type.MESSAGE_ONLY')}</span>
+            ) : (
+              <>
+                <span>{t('automations.formSent')}</span>
+                <span style={{ opacity: 0.45 }}>|</span>
+                <span>{formLabel}</span>
+              </>
+            )}
           </div>
         </div>
 

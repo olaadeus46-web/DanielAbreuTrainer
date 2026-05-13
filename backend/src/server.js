@@ -22,13 +22,37 @@ import { prisma } from './config/database.js';
 import { errorHandler }    from './middleware/errorHandler.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const moduleUrl = typeof import.meta !== 'undefined' ? import.meta.url : undefined;
+const __filename = moduleUrl ? fileURLToPath(moduleUrl) : path.resolve(process.cwd(), 'backend/src/server.js');
+const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+const DEFAULT_PUBLIC_APP_URL = 'https://danieltrainer.com';
+
+function parseAllowedOrigins(originsValue) {
+  const defaults = [
+    'http://localhost:5173',
+    'https://danieltrainer.com',
+    'https://www.danieltrainer.com',
+  ];
+  const configured = String(originsValue || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return [...new Set([...configured, ...defaults])];
+}
+
+const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGIN || process.env.PUBLIC_APP_URL || DEFAULT_PUBLIC_APP_URL);
+
 // ── Security & Middleware ─────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('dev'));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }));
@@ -53,11 +77,15 @@ app.use('/api/automations',  automationRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 Daniel Abreu Trainer API running on http://localhost:${PORT}`);
-  console.log(`   Docs:   http://localhost:${PORT}/health`);
-  console.log(`   Env:    ${process.env.NODE_ENV || 'development'}\n`);
-});
+const isServerlessRuntime = Boolean(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+if (!isServerlessRuntime) {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Daniel Abreu Trainer API running on http://localhost:${PORT}`);
+    console.log(`   Docs:   http://localhost:${PORT}/health`);
+    console.log(`   Env:    ${process.env.NODE_ENV || 'development'}\n`);
+  });
+}
 
 // ── Automation scheduler: check every 15 min for pending automations ─────────
 cron.schedule('*/15 * * * *', async () => {

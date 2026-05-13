@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api' });
-const publicApi = axios.create({ baseURL: '/api' });
+const configuredApiBase = String(import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+
+const api = axios.create({ baseURL: configuredApiBase });
+const publicApi = axios.create({ baseURL: configuredApiBase });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('fc_token');
@@ -35,6 +37,17 @@ export const clientsApi = {
   listFeedback: (id) => api.get(`/clients/${id}/feedback`),
   listFeedbackLinks: (id) => api.get(`/clients/${id}/feedback-links`),
   createFeedbackLink: (id, data) => api.post(`/clients/${id}/feedback-links`, data),
+  listFileFolders: (id) => api.get(`/clients/${id}/files/folders`),
+  createFileFolder: (id, data) => api.post(`/clients/${id}/files/folders`, data),
+  updateFileFolder: (id, folderId, data) => api.patch(`/clients/${id}/files/folders/${folderId}`, data),
+  deleteFileFolder: (id, folderId) => api.delete(`/clients/${id}/files/folders/${folderId}`),
+  createFileItem: (id, formData) => api.post(`/clients/${id}/files/items`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  deleteFileItem: (id, itemId) => api.delete(`/clients/${id}/files/items/${itemId}`),
+  downloadFileItem: (id, itemId) => api.get(`/clients/${id}/files/items/${itemId}/download`, {
+    responseType: 'blob',
+  }),
   extractIntakeAi: (formData) => api.post('/clients/extract-intake-ai', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
@@ -110,6 +123,17 @@ export const financeApi = {
   overview: () => api.get('/finance/overview'),
   stats: () => api.get('/finance/stats'),
   updatePayment: (clientId, data) => api.patch(`/finance/payments/${clientId}`, data),
+  listExpenses: (params) => api.get('/finance/expenses', { params }),
+  createExpense: (formData) => api.post('/finance/expenses', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateExpense: (id, formData) => api.patch(`/finance/expenses/${id}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  downloadExpenseAttachment: (id) => api.get(`/finance/expenses/${id}/attachment/download`, {
+    responseType: 'blob',
+  }),
+  deleteExpense: (id) => api.delete(`/finance/expenses/${id}`),
 };
 
 export const packagesApi = {

@@ -1,0 +1,17 @@
+{
+  "name": "Daniel Abreu Trainer",
+  "short_name": "DA Trainer",
+  "description": "Daniel Abreu Personal Trainer app",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

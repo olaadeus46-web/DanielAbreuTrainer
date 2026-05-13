@@ -9,8 +9,12 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  Legend,
   Line,
   LineChart,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -41,6 +45,16 @@ const emptyPackageForm = {
   sessionsPerWeek: '',
   sessionsPerMonth: '',
   hasOnlineSupport: true,
+};
+
+const emptyExpenseForm = {
+  title: '',
+  description: '',
+  amount: '',
+  category: '',
+  paymentMethod: '',
+  type: 'FIXED',
+  expenseDate: new Date().toISOString().slice(0, 10),
 };
 
 const statusColors = {
@@ -107,6 +121,7 @@ export default function FinancePage() {
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'status');
   const [data, setData] = useState(null);
   const [stats, setStats] = useState(null);
+  const [expensesData, setExpensesData] = useState({ items: [], totals: { count: 0, amount: 0, byType: {} } });
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(null);
@@ -114,10 +129,16 @@ export default function FinancePage() {
   const [editingPackage, setEditingPackage] = useState(null);
   const [packageForm, setPackageForm] = useState(emptyPackageForm);
   const [savingPackage, setSavingPackage] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
+  const [expenseForm, setExpenseForm] = useState(emptyExpenseForm);
+  const [expenseFile, setExpenseFile] = useState(null);
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [statsYearFilter, setStatsYearFilter] = useState('ALL');
 
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
-    if (tabFromUrl && ['status', 'packages', 'stats'].includes(tabFromUrl)) {
+    if (tabFromUrl && ['status', 'packages', 'expenses', 'stats'].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     }
   }, [searchParams]);
@@ -133,10 +154,15 @@ export default function FinancePage() {
     setPackages(response.data);
   };
 
+  const loadExpenses = async () => {
+    const response = await financeApi.listExpenses();
+    setExpensesData(response.data || { items: [], totals: { count: 0, amount: 0, byType: {} } });
+  };
+
   const load = async () => {
     setLoading(true);
     try {
-      await Promise.all([loadFinance(), loadPackages()]);
+      await Promise.all([loadFinance(), loadPackages(), loadExpenses()]);
     } finally {
       setLoading(false);
     }
@@ -221,6 +247,89 @@ export default function FinancePage() {
     }
   };
 
+  const openCreateExpense = () => {
+    setEditingExpense(null);
+    setExpenseForm({ ...emptyExpenseForm, expenseDate: new Date().toISOString().slice(0, 10) });
+    setExpenseFile(null);
+    setShowExpenseModal(true);
+  };
+
+  const openEditExpense = (expense) => {
+    setEditingExpense(expense);
+    setExpenseForm({
+      title: expense.title || '',
+      description: expense.description || '',
+      amount: expense.amount ?? '',
+      category: expense.category || '',
+      paymentMethod: expense.paymentMethod || '',
+      type: expense.type || 'FIXED',
+      expenseDate: expense.expenseDate ? String(expense.expenseDate).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    });
+    setExpenseFile(null);
+    setShowExpenseModal(true);
+  };
+
+  const onSaveExpense = async (e) => {
+    e.preventDefault();
+    setSavingExpense(true);
+    try {
+      const formData = new FormData();
+      formData.append('title', expenseForm.title);
+      formData.append('description', expenseForm.description || '');
+      formData.append('amount', String(expenseForm.amount));
+      formData.append('category', expenseForm.category || '');
+      formData.append('paymentMethod', expenseForm.paymentMethod || '');
+      formData.append('type', expenseForm.type || 'FIXED');
+      formData.append('expenseDate', expenseForm.expenseDate || new Date().toISOString().slice(0, 10));
+
+      if (expenseFile) formData.append('attachment', expenseFile);
+
+      if (editingExpense?.id) await financeApi.updateExpense(editingExpense.id, formData);
+      else await financeApi.createExpense(formData);
+
+      setShowExpenseModal(false);
+      setEditingExpense(null);
+      setExpenseForm(emptyExpenseForm);
+      setExpenseFile(null);
+      await Promise.all([loadExpenses(), loadFinance()]);
+    } catch (err) {
+      showError(err.response?.data?.error || t('finance.expenses.errorSave'));
+    } finally {
+      setSavingExpense(false);
+    }
+  };
+
+  const onDeleteExpense = async (expense) => {
+    if (!(await confirm(t('finance.expenses.confirmDelete', { name: expense.title })))) return;
+    try {
+      await financeApi.deleteExpense(expense.id);
+      await Promise.all([loadExpenses(), loadFinance()]);
+    } catch (err) {
+      showError(err.response?.data?.error || t('finance.expenses.errorDelete'));
+    }
+  };
+
+  const onDownloadExpenseAttachment = async (expense) => {
+    try {
+      const response = await financeApi.downloadExpenseAttachment(expense.id);
+      const contentDisposition = response.headers?.['content-disposition'] || '';
+      const fileNameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+      const fallbackName = expense.attachments?.[0]?.fileName || 'anexo';
+      const fileName = fileNameMatch?.[1] || fallbackName;
+
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      showError(err.response?.data?.error || t('finance.expenses.errorDownload'));
+    }
+  };
+
   const switchTab = (tabKey) => {
     setActiveTab(tabKey);
     setSearchParams({ tab: tabKey }, { replace: true });
@@ -245,6 +354,30 @@ export default function FinancePage() {
     ...pkg,
     name: pkg.name || t('finance.noPackage'),
   }));
+
+  const revenueVsExpenseCharts = useMemo(() => {
+    if (!stats?.monthlyRevenueVsExpenses) return [];
+    return stats.monthlyRevenueVsExpenses.map((item) => {
+      const d = new Date(item.year, item.month - 1, 1);
+      return {
+        ...item,
+        label: d.toLocaleDateString(locale, { month: 'short' }),
+      };
+    });
+  }, [stats, locale]);
+
+  const yearlyRevenueCharts = (stats?.yearlyRevenue || []).map((item) => ({ year: String(item.year), value: Number(item.value || 0) }));
+  const yearlyExpenseCharts = (stats?.yearlyExpenses || []).map((item) => ({ year: String(item.year), value: Number(item.value || 0) }));
+  const expenseCategoryCharts = (stats?.expenseStats?.byCategory || []).map((item) => ({ name: item.name, value: Number(item.value || 0) }));
+  const statsYearOptions = useMemo(() => {
+    const years = [...new Set((revenueVsExpenseCharts || []).map((item) => String(item.year)))].sort((a, b) => Number(b) - Number(a));
+    return years;
+  }, [revenueVsExpenseCharts]);
+  const filteredRevenueVsExpenseRows = useMemo(() => {
+    const base = revenueVsExpenseCharts.slice(-12);
+    if (statsYearFilter === 'ALL') return base;
+    return base.filter((row) => String(row.year) === String(statsYearFilter));
+  }, [revenueVsExpenseCharts, statsYearFilter]);
 
   const overview = useMemo(() => {
     if (!data) return null;
@@ -495,15 +628,97 @@ export default function FinancePage() {
     </>
   );
 
+  const renderExpensesTab = () => (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0,1fr))', gap: 14, marginBottom: 18 }}>
+        <KpiCard title={t('finance.expenses.totalExpenses')} value={formatCurrency(expensesData?.totals?.amount || 0)} detail={t('finance.expenses.currentTotal')} accent="#9F4A4A" />
+        <KpiCard title={t('finance.expenses.totalRecords')} value={expensesData?.totals?.count || 0} detail={t('finance.expenses.entriesCount')} accent="#5682B1" />
+        <KpiCard title={t('finance.expenses.fixedExpenses')} value={formatCurrency(expensesData?.totals?.byType?.FIXED || 0)} detail={t('finance.expenses.fixedHint')} accent="#B66A17" />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'space-between', marginBottom: 14, flexDirection: isMobile ? 'column' : 'row', gap: 10 }}>
+        <div>
+          <h2 style={{ fontSize: isMobile ? 19 : 22, margin: 0, color: '#10253C', fontWeight: 800 }}>{t('finance.expenses.title')}</h2>
+          <p style={{ fontSize: 13, color: '#6B86A3', margin: '4px 0 0' }}>{t('finance.expenses.subtitle')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={openCreateExpense}
+          style={{
+            border: 'none',
+            borderRadius: 12,
+            padding: '11px 18px',
+            background: 'linear-gradient(135deg, #10253C 0%, #5682B1 100%)',
+            color: '#FFFFFF',
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: 'pointer',
+            width: isMobile ? '100%' : 'auto',
+          }}
+        >
+          {t('finance.expenses.newExpense')}
+        </button>
+      </div>
+
+      <div style={{ ...card, padding: isMobile ? '16px 14px' : '20px 24px' }}>
+        {expensesData.items.length === 0 ? (
+          <p style={{ margin: 0, fontSize: 13, color: '#6B86A3' }}>{t('finance.expenses.empty')}</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(159,189,217,0.24)' }}>
+                  {[t('finance.expenses.colDate'), t('finance.expenses.colTitle'), t('finance.expenses.colCategory'), t('finance.expenses.colType'), t('finance.expenses.colAmount'), t('finance.expenses.colAttachments'), t('finance.actionCol')].map((label, index) => (
+                    <th key={label} style={{ textAlign: index === 0 ? 'left' : index === 6 ? 'right' : 'center', padding: '8px 8px 12px', color: '#6B86A3', fontSize: 11, letterSpacing: '0.08em', fontWeight: 700 }}>
+                      {label.toUpperCase()}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {expensesData.items.map((expense, index) => (
+                  <tr key={expense.id} style={{ borderBottom: index < expensesData.items.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
+                    <td style={{ padding: '12px 8px 12px 0', color: '#10253C', fontWeight: 700 }}>{new Date(expense.expenseDate).toLocaleDateString(locale)}</td>
+                    <td style={{ textAlign: 'center', padding: '12px 8px', color: '#10253C' }}>{expense.title}</td>
+                    <td style={{ textAlign: 'center', padding: '12px 8px', color: '#2C4F73' }}>{expense.category || '-'}</td>
+                    <td style={{ textAlign: 'center', padding: '12px 8px', color: '#2C4F73' }}>{expense.type || 'FIXED'}</td>
+                    <td style={{ textAlign: 'center', padding: '12px 8px', color: '#10253C', fontWeight: 700 }}>{formatCurrency(expense.amount)}</td>
+                    <td style={{ textAlign: 'center', padding: '12px 8px' }}>
+                      {expense.attachments?.length ? (
+                        <button
+                          type="button"
+                          onClick={() => onDownloadExpenseAttachment(expense)}
+                          style={{ border: '1px solid #9FBDD9', color: '#2C4F73', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}
+                        >
+                          {t('finance.expenses.download')} ({expense.attachments[0]?.fileName || t('finance.expenses.file')})
+                        </button>
+                      ) : <span style={{ color: '#6B86A3' }}>-</span>}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '12px 0' }}>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        <button type="button" onClick={() => openEditExpense(expense)} style={{ border: '1px solid #9FBDD9', color: '#2C4F73', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}>{t('common.edit')}</button>
+                        <button type="button" onClick={() => onDeleteExpense(expense)} style={{ border: '1px solid #D9A2A2', color: '#9F4A4A', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}>{t('packages.delete')}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+
   const renderStatsTab = () => (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
         <KpiCard title={t('finance.totalClients')} value={stats?.totals?.totalClients || 0} detail={t('finance.monthTarget')} accent="#10253C" />
-        <KpiCard title={t('finance.clientsWithPackage')} value={stats?.totals?.clientsWithPackage || 0} detail={t('finance.activeInPackages')} accent="#5682B1" />
-        <KpiCard title={t('finance.avgCollectionRate')} value={`${Math.round(stats?.totals?.averageCollectionRate || 0)}%`} detail={t('finance.lastMonths')} accent="#2D7A47" />
+        <KpiCard title={t('finance.annualRevenue')} value={formatCurrency(stats?.totals?.annualRevenue || 0)} detail={t('finance.currentYear')} accent="#2D7A47" />
+        <KpiCard title={t('finance.annualExpenses')} value={formatCurrency(stats?.totals?.annualExpenses || 0)} detail={t('finance.currentYear')} accent="#9F4A4A" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 14, marginBottom: 14 }}>
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.collectionTrend')}</div>
           <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.collectionTrendHint')}</div>
@@ -534,6 +749,118 @@ export default function FinancePage() {
                 <Tooltip formatter={(value, key) => (key === 'revenue' ? formatCurrency(value) : value)} />
                 <Bar dataKey="clients" name={t('nav.clients')} fill="#5682B1" radius={[0, 8, 8, 0]} />
               </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 14, marginBottom: 14 }}>
+        <div style={card}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.revenueVsExpenses')}</div>
+          <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.revenueVsExpensesHint')}</div>
+          <div style={{ width: '100%', height: 280 }}>
+            <ResponsiveContainer>
+              <BarChart data={revenueVsExpenseCharts} margin={{ left: 8, right: 8, top: 4, bottom: 0 }}>
+                <CartesianGrid stroke="rgba(159,189,217,0.24)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#6B86A3' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: '#6B86A3' }} tickLine={false} axisLine={false} width={80} />
+                <Tooltip formatter={(value) => formatCurrency(value)} />
+                <Legend />
+                <Bar dataKey="revenue" name={t('finance.received')} fill="#2D7A47" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="expenses" name={t('finance.expenses.title')} fill="#9F4A4A" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div style={card}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.yearlyRevenueExpenses')}</div>
+          <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.yearlyRevenueExpensesHint')}</div>
+          <div style={{ width: '100%', height: 280 }}>
+            <ResponsiveContainer>
+              <LineChart
+                data={yearlyRevenueCharts.map((item, idx) => ({
+                  year: item.year,
+                  revenue: item.value,
+                  expenses: yearlyExpenseCharts[idx]?.value || 0,
+                }))}
+                margin={{ left: 8, right: 8, top: 4, bottom: 0 }}
+              >
+                <CartesianGrid stroke="rgba(159,189,217,0.24)" vertical={false} />
+                <XAxis dataKey="year" tick={{ fontSize: 12, fill: '#6B86A3' }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 12, fill: '#6B86A3' }} tickLine={false} axisLine={false} width={80} />
+                <Tooltip formatter={(value) => formatCurrency(value)} />
+                <Legend />
+                <Line type="monotone" dataKey="revenue" stroke="#2D7A47" strokeWidth={3} dot />
+                <Line type="monotone" dataKey="expenses" stroke="#9F4A4A" strokeWidth={3} dot />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : '1.15fr 1fr', gap: 14 }}>
+        <div style={card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C' }}>{t('finance.revenueVsExpensesTable')}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: '#6B86A3', fontWeight: 700 }}>{t('finance.filterYear')}</span>
+              <select
+                value={statsYearFilter}
+                onChange={(e) => setStatsYearFilter(e.target.value)}
+                style={{ border: '1px solid #9FBDD9', borderRadius: 8, padding: '6px 10px', fontSize: 12, color: '#2C4F73', fontWeight: 700 }}
+              >
+                <option value="ALL">{t('finance.allYears')}</option>
+                {statsYearOptions.map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 620, borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(159,189,217,0.24)' }}>
+                  {[t('finance.monthCol'), t('finance.received'), t('finance.expenses.title'), t('finance.netResult')].map((label, index) => (
+                    <th key={label} style={{ textAlign: index === 0 ? 'left' : 'center', padding: '8px 8px 12px', color: '#6B86A3', fontSize: 11, letterSpacing: '0.08em', fontWeight: 700 }}>
+                      {label.toUpperCase()}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRevenueVsExpenseRows.map((row, index) => (
+                  <tr key={`${row.year}-${row.month}`} style={{ borderBottom: index < filteredRevenueVsExpenseRows.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
+                    <td style={{ padding: '12px 8px 12px 0', color: '#10253C', fontWeight: 700 }}>{row.label} {row.year}</td>
+                    <td style={{ textAlign: 'center', padding: '12px 8px', color: '#2D7A47', fontWeight: 700 }}>{formatCurrency(row.revenue)}</td>
+                    <td style={{ textAlign: 'center', padding: '12px 8px', color: '#9F4A4A', fontWeight: 700 }}>{formatCurrency(row.expenses)}</td>
+                    <td style={{ textAlign: 'center', padding: '12px 8px', color: row.net >= 0 ? '#2D7A47' : '#9F4A4A', fontWeight: 700 }}>{formatCurrency(row.net)}</td>
+                  </tr>
+                ))}
+                {filteredRevenueVsExpenseRows.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ padding: '14px 8px', textAlign: 'center', color: '#6B86A3' }}>{t('finance.expenses.empty')}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style={card}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.expensesByCategory')}</div>
+          <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.expensesByCategoryHint')}</div>
+          <div style={{ width: '100%', height: 280 }}>
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie data={expenseCategoryCharts} dataKey="value" nameKey="name" outerRadius={95} innerRadius={55} paddingAngle={2}>
+                  {expenseCategoryCharts.map((entry, index) => (
+                    <Cell key={`cell-${entry.name}`} fill={['#9F4A4A', '#B66A17', '#5682B1', '#2D7A47', '#739EC9'][index % 5]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => formatCurrency(value)} />
+                <Legend />
+              </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -576,6 +903,7 @@ export default function FinancePage() {
         {[
           { key: 'status', label: t('finance.statusByClientTab') },
           { key: 'packages', label: t('finance.monthlyPackagesTab') },
+          { key: 'expenses', label: t('finance.expensesTab') },
           { key: 'stats', label: t('finance.statsDashboardsTab') },
         ].map((tab) => (
           <button
@@ -600,7 +928,120 @@ export default function FinancePage() {
 
       {activeTab === 'status' && renderStatusTab()}
       {activeTab === 'packages' && renderPackagesTab()}
+      {activeTab === 'expenses' && renderExpensesTab()}
       {activeTab === 'stats' && renderStatsTab()}
+
+      {showExpenseModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: isMobile ? '16px 16px 0 0' : 20,
+              padding: isMobile ? '22px 16px 18px' : '32px 36px',
+              width: '100%',
+              maxWidth: isMobile ? '100%' : 560,
+              boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
+              maxHeight: isMobile ? '92vh' : '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: '#000000' }}>{editingExpense ? t('finance.expenses.modal.editTitle') : t('finance.expenses.modal.createTitle')}</h2>
+                <p style={{ fontSize: 12, color: '#739EC9', marginTop: 3 }}>{t('finance.expenses.modal.subtitle')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExpenseModal(false)}
+                style={{ background: '#FFFFFF', border: 'none', width: 32, height: 32, borderRadius: 8, fontSize: 18, color: '#5682B1', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >
+                x
+              </button>
+            </div>
+            <form onSubmit={onSaveExpense}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('finance.expenses.modal.title')}</label>
+                <input type="text" value={expenseForm.title} onChange={(e) => setExpenseForm({ ...expenseForm, title: e.target.value })} required />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('finance.expenses.modal.amount')}</label>
+                <input type="number" step="0.01" min="0" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} required />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('finance.expenses.modal.date')}</label>
+                <input type="date" value={expenseForm.expenseDate} onChange={(e) => setExpenseForm({ ...expenseForm, expenseDate: e.target.value })} required />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                <div>
+                  <label style={labelStyle}>{t('finance.expenses.modal.category')}</label>
+                  <input type="text" value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })} />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t('finance.expenses.modal.type')}</label>
+                  <select value={expenseForm.type} onChange={(e) => setExpenseForm({ ...expenseForm, type: e.target.value })}>
+                    <option value="FIXED">{t('finance.expenses.typeFixed')}</option>
+                    <option value="VARIABLE">{t('finance.expenses.typeVariable')}</option>
+                    <option value="ONE_OFF">{t('finance.expenses.typeOneOff')}</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('finance.expenses.modal.paymentMethod')}</label>
+                <input type="text" value={expenseForm.paymentMethod} onChange={(e) => setExpenseForm({ ...expenseForm, paymentMethod: e.target.value })} />
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{t('finance.expenses.modal.description')}</label>
+                <textarea value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} rows={3} style={{ resize: 'vertical' }} />
+              </div>
+              <div style={{ marginBottom: 18 }}>
+                <label style={labelStyle}>{t('finance.expenses.modal.attachments')}</label>
+                <input type="file" onChange={(e) => setExpenseFile(e.target.files?.[0] || null)} />
+                {expenseFile ? (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#2C4F73' }}>{expenseFile.name}</div>
+                ) : null}
+                {editingExpense?.attachments?.length > 0 && (
+                  <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => onDownloadExpenseAttachment(editingExpense)}
+                      style={{ border: '1px solid #9FBDD9', color: '#2C4F73', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      {t('finance.expenses.download')} ({editingExpense.attachments[0]?.fileName || t('finance.expenses.file')})
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isMobile ? 'column-reverse' : 'row' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowExpenseModal(false)}
+                  style={{ padding: '10px 18px', border: '1.5px solid #739EC9', borderRadius: 10, background: 'none', fontSize: 13, fontWeight: 500, color: '#5682B1', cursor: 'pointer', width: isMobile ? '100%' : 'auto' }}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingExpense}
+                  style={{ padding: '10px 22px', background: savingExpense ? '#739EC9' : 'linear-gradient(135deg, #5682B1 0%, #739EC9 100%)', color: '#FFFFFF', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: savingExpense ? 'not-allowed' : 'pointer', width: isMobile ? '100%' : 'auto' }}
+                >
+                  {savingExpense ? t('finance.expenses.modal.saving') : editingExpense ? t('finance.expenses.modal.update') : t('finance.expenses.modal.create')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showPackageModal && (
         <div

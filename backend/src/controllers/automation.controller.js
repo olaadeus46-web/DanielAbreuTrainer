@@ -22,7 +22,7 @@ function createToken() {
 }
 
 function buildOrigin() {
-  return String(process.env.PUBLIC_APP_URL || process.env.CORS_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
+  return String(process.env.PUBLIC_APP_URL || process.env.CORS_ORIGIN || 'https://danieltrainer.com').replace(/\/$/, '');
 }
 
 function buildCheckInUrl(token)  { return `${buildOrigin()}/check-in/${token}`; }
@@ -42,6 +42,10 @@ function expiresAt() {
 function buildDefaultMessageTemplate(type) {
   if (type === 'FEEDBACK') {
     return `🏋️‍♂️ *Daniel Abreu Personal Trainer*\n\nOlá {{name}}! 👋\n\nO Daniel gostaria de receber o teu *feedback*. A tua opinião é muito importante para continuarmos a evoluir juntos:\n\n👉 {{link}}\n\nObrigado! 🙏`;
+  }
+
+  if (type === 'MESSAGE_ONLY') {
+    return `🏋️‍♂️ *Daniel Abreu Personal Trainer*\n\nOlá {{name}}! 👋\n\nComo estão a correr os treinos? Estou aqui se precisares de alguma coisa. 💬\n\nForça! 💪`;
   }
 
   return `🏋️‍♂️ *Daniel Abreu Personal Trainer*\n\nOlá {{name}}! 👋\n\nO Daniel preparou um novo *formulário de check-in* especialmente para ti. Preenche-o para acompanhares o teu progresso:\n\n👉 {{link}}\n\nForça! 💪`;
@@ -98,6 +102,11 @@ function buildSkippedResult(client, error) {
 async function getFollowUpEligibility(automation) {
   const clientIds = Array.isArray(automation.clientIds) ? automation.clientIds : [];
   if (!automation.parentAutomationId || !clientIds.length) {
+    return { eligibleClientIds: clientIds, skippedByClientId: new Map() };
+  }
+
+  // MESSAGE_ONLY follow-ups have no form link to check — all clients are eligible
+  if (automation.type === 'MESSAGE_ONLY') {
     return { eligibleClientIds: clientIds, skippedByClientId: new Map() };
   }
 
@@ -204,37 +213,40 @@ async function dispatchToClient(client, automation) {
   // Normalise phone to E.164 "whatsapp:+..." format
   const toPhone = phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone.startsWith('+') ? phone : '+' + phone}`;
 
-  let linkUrl;
-  try {
-    const token = createToken();
-    const exp   = expiresAt();
-    const nowIso = new Date().toISOString();
+  let linkUrl = null;
 
-    if (automation.type === 'CHECK_IN') {
-      // Expire existing active links for this client
-      const existing = await prisma.checkInLink.findMany({ where: { clientId: client.id } });
-      for (const l of existing.filter((l) => !isLinkStale(l))) {
-        await prisma.checkInLink.update({ where: { id: l.id }, data: { expiresAt: nowIso } });
+  if (automation.type !== 'MESSAGE_ONLY') {
+    try {
+      const token = createToken();
+      const exp   = expiresAt();
+      const nowIso = new Date().toISOString();
+
+      if (automation.type === 'CHECK_IN') {
+        // Expire existing active links for this client
+        const existing = await prisma.checkInLink.findMany({ where: { clientId: client.id } });
+        for (const l of existing.filter((l) => !isLinkStale(l))) {
+          await prisma.checkInLink.update({ where: { id: l.id }, data: { expiresAt: nowIso } });
+        }
+        await prisma.checkInLink.create({ data: { clientId: client.id, automationId: automation.id, token, expiresAt: exp } });
+        linkUrl = buildCheckInUrl(token);
+      } else {
+        // FEEDBACK
+        const existing = await prisma.feedbackLink.findMany({ where: { clientId: client.id } });
+        for (const l of existing.filter((l) => !isLinkStale(l))) {
+          await prisma.feedbackLink.update({ where: { id: l.id }, data: { expiresAt: nowIso } });
+        }
+        await prisma.feedbackLink.create({ data: { clientId: client.id, automationId: automation.id, token, expiresAt: exp } });
+        linkUrl = buildFeedbackUrl(token);
       }
-      await prisma.checkInLink.create({ data: { clientId: client.id, automationId: automation.id, token, expiresAt: exp } });
-      linkUrl = buildCheckInUrl(token);
-    } else {
-      // FEEDBACK
-      const existing = await prisma.feedbackLink.findMany({ where: { clientId: client.id } });
-      for (const l of existing.filter((l) => !isLinkStale(l))) {
-        await prisma.feedbackLink.update({ where: { id: l.id }, data: { expiresAt: nowIso } });
-      }
-      await prisma.feedbackLink.create({ data: { clientId: client.id, automationId: automation.id, token, expiresAt: exp } });
-      linkUrl = buildFeedbackUrl(token);
+    } catch (err) {
+      return { clientId: client.id, clientName, phone: toPhone, status: 'failed', error: `Erro ao criar link: ${err.message}` };
     }
-  } catch (err) {
-    return { clientId: client.id, clientName, phone: toPhone, status: 'failed', error: `Erro ao criar link: ${err.message}` };
   }
 
   const body = renderMessageTemplate(
     automation.messageTemplate || buildDefaultMessageTemplate(automation.type),
     clientName,
-    linkUrl,
+    linkUrl || '',
   );
 
   if (!body) {
@@ -311,7 +323,7 @@ export const createAutomation = async (req, res, next) => {
     const { name, type, sendMode, delayDays, clientIds, messageTemplate, parentAutomationId } = req.body || {};
 
     if (!name || !String(name).trim()) throw new AppError('Nome é obrigatório.', 400);
-    if (!['CHECK_IN', 'FEEDBACK'].includes(type)) throw new AppError('Tipo inválido.', 400);
+    if (!['CHECK_IN', 'FEEDBACK', 'MESSAGE_ONLY'].includes(type)) throw new AppError('Tipo inválido.', 400);
     if (!['IMMEDIATE', 'SCHEDULED'].includes(sendMode)) throw new AppError('Modo de envio inválido.', 400);
     if (!Array.isArray(clientIds) || !clientIds.length) throw new AppError('Seleciona pelo menos um cliente.', 400);
     if (!String(messageTemplate || buildDefaultMessageTemplate(type)).trim()) throw new AppError('Mensagem é obrigatória.', 400);
@@ -370,7 +382,7 @@ export const updateAutomation = async (req, res, next) => {
     } = req.body || {};
 
     if (!name || !String(name).trim()) throw new AppError('Nome é obrigatório.', 400);
-    if (!['CHECK_IN', 'FEEDBACK'].includes(type)) throw new AppError('Tipo inválido.', 400);
+    if (!['CHECK_IN', 'FEEDBACK', 'MESSAGE_ONLY'].includes(type)) throw new AppError('Tipo inválido.', 400);
     if (!['IMMEDIATE', 'SCHEDULED'].includes(sendMode)) throw new AppError('Modo de envio inválido.', 400);
     if (!Array.isArray(clientIds) || !clientIds.length) throw new AppError('Seleciona pelo menos um cliente.', 400);
     if (!String(messageTemplate || '').trim()) throw new AppError('Mensagem é obrigatória.', 400);
