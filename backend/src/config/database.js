@@ -29,7 +29,11 @@ const MODEL_TABLE = {
 	onlineClientLink: 'OnlineClientLink',
 	feedbackLink: 'FeedbackLink',
 	clientFeedback: 'ClientFeedback',
+	clientFileFolder: 'ClientFileFolder',
+	clientFileItem: 'ClientFileItem',
 	automation: 'Automation',
+	expense: 'Expense',
+	expenseAttachment: 'ExpenseAttachment',
 };
 
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date);
@@ -521,7 +525,11 @@ const prisma = {
 	onlineClientLink: createModelDelegate('onlineClientLink'),
 	feedbackLink: createModelDelegate('feedbackLink'),
 	clientFeedback: createModelDelegate('clientFeedback'),
+	clientFileFolder: createModelDelegate('clientFileFolder'),
+	clientFileItem: createModelDelegate('clientFileItem'),
 	automation: createModelDelegate('automation'),
+	expense: createModelDelegate('expense'),
+	expenseAttachment: createModelDelegate('expenseAttachment'),
 	$transaction: async (callback) => callback(prisma),
 };
 
