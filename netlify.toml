@@ -6,9 +6,6 @@
   directory = "netlify/functions-built"
   node_bundler = "esbuild"
 
-[functions."api"]
-  included_files = ["backend/src/**", "backend/prisma/**", "backend/package.json"]
-
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/api/:splat"
