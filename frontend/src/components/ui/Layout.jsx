@@ -6,7 +6,7 @@ import LanguageSwitcher from './LanguageSwitcher';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import logoHeader from '../../assets/daniel-abreu-logo.svg';
 import logoHeaderBlack from '../../assets/daniel-abreu-logo-black.svg';
-import profileImage from '../../assets/daniel-abreu.png';
+import profileImage from '../../assets/Daniel-Abreu.png';
 
 const DashIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
