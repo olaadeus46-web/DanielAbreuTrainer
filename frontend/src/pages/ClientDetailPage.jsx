@@ -1455,15 +1455,15 @@ export default function ClientDetailPage() {
     <div style={{ padding: isMobile ? '16px 14px 20px' : '28px 32px' }}>
       <section style={{
         background: 'linear-gradient(135deg, #10253C 0%, #1D3C5A 52%, #5682B1 100%)',
-        borderRadius: 28,
-        padding: isMobile ? '22px 18px' : '28px 30px',
+        borderRadius: isMobile ? 20 : 28,
+        padding: isMobile ? '16px 14px' : '28px 30px',
         color: '#FFFFFF',
         boxShadow: '0 24px 50px rgba(16,37,60,0.24)',
-        marginBottom: 18,
+        marginBottom: isMobile ? 14 : 18,
       }}>
         <button onClick={() => navigate('/clients')} style={{
           background: 'none', border: 'none', color: '#C8DBED', fontSize: 12, cursor: 'pointer',
-          padding: 0, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700,
+          padding: 0, marginBottom: isMobile ? 12 : 18, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700,
         }}>
           {t('clientDetail.backToClients')}
         </button>
@@ -1471,14 +1471,14 @@ export default function ClientDetailPage() {
         <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'flex-start', justifyContent: 'space-between', gap: 18, flexDirection: isMobile ? 'column' : 'row' }}>
           <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 16, flexDirection: isMobile ? 'column' : 'row', maxWidth: 760 }}>
             <div style={{
-              width: isMobile ? 68 : 58,
-              height: isMobile ? 68 : 58,
+              width: isMobile ? 56 : 58,
+              height: isMobile ? 56 : 58,
               borderRadius: '50%',
               background: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 20,
+              fontSize: isMobile ? 18 : 20,
               fontWeight: 800,
               color: '#10253C',
               flexShrink: 0,
@@ -1486,14 +1486,14 @@ export default function ClientDetailPage() {
               {initials}
             </div>
             <div style={{ textAlign: isMobile ? 'left' : 'left' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#C8DBED', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#C8DBED', marginBottom: 8 }}>
                 {t('clientDetail.clientOverview')}
               </div>
-              <h1 style={{ fontSize: isMobile ? 24 : 34, lineHeight: 1.05, fontWeight: 800, margin: 0 }}>{client.name}</h1>
-              <p style={{ fontSize: isMobile ? 14 : 16, lineHeight: 1.6, color: '#E4EFF9', margin: '12px 0 0', maxWidth: 620 }}>
+              <h1 style={{ fontSize: isMobile ? 22 : 34, lineHeight: 1.05, fontWeight: 800, margin: 0 }}>{client.name}</h1>
+              <p style={{ fontSize: isMobile ? 13 : 16, lineHeight: 1.45, color: '#E4EFF9', margin: '8px 0 0', maxWidth: 620 }}>
                 {client.goal || profileSummary}
               </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.14)', color: '#FFFFFF', borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 700 }}>
                   {t('clientDetail.paymentStatus')}: {payLabel}
                 </span>
@@ -1506,31 +1506,32 @@ export default function ClientDetailPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(2, minmax(160px, 1fr))', gap: 10, minWidth: isMobile ? 'auto' : 360 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(2, minmax(160px, 1fr))', gap: isMobile ? 8 : 10, minWidth: isMobile ? 'auto' : 360 }}>
             {[
               { label: t('clientDetail.monthlyFee'), value: formatCurrency(client.monthlyPrice) },
               { label: t('clientDetail.frequency'), value: `${client.trainingFrequency || 0}${t('clientDetail.perWeek')}` },
               { label: t('clientDetail.programStart'), value: formatDisplayDate(client.startDate, locale) },
               { label: t('clientDetail.latestWeight'), value: latestWeight },
             ].map((item) => (
-              <div key={item.label} style={{ padding: '14px 16px', borderRadius: 18, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)' }}>
+              <div key={item.label} style={{ padding: isMobile ? '10px 10px' : '14px 16px', borderRadius: 14, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#C8DBED' }}>{item.label}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#FFFFFF', marginTop: 8 }}>{item.value}</div>
+                <div style={{ fontSize: isMobile ? 16 : 22, fontWeight: 800, color: '#FFFFFF', marginTop: 6 }}>{item.value}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20, background: '#FFFFFF', padding: 6, borderRadius: 16, width: isMobile ? '100%' : 'fit-content', maxWidth: '100%', boxShadow: '0 18px 40px rgba(16,37,60,0.08)', border: '1px solid rgba(159,189,217,0.24)', overflowX: 'auto' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, background: '#FFFFFF', padding: 6, borderRadius: 16, width: isMobile ? '100%' : 'fit-content', maxWidth: '100%', boxShadow: '0 18px 40px rgba(16,37,60,0.08)', border: '1px solid rgba(159,189,217,0.24)', overflowX: 'auto', flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
         {tabs.map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key)} style={{
-            padding: '10px 18px', border: 'none', borderRadius: 12, fontSize: 13, cursor: 'pointer',
+            padding: isMobile ? '9px 14px' : '10px 18px', border: 'none', borderRadius: 12, fontSize: 13, cursor: 'pointer',
             background: activeTab === key ? '#10253C' : 'transparent',
             color: activeTab === key ? '#FFFFFF' : '#6B86A3',
             fontWeight: activeTab === key ? 700 : 600,
             transition: 'all .15s',
             whiteSpace: 'nowrap',
+            flexShrink: 0,
           }}>{label}</button>
         ))}
       </div>
@@ -1641,33 +1642,56 @@ export default function ClientDetailPage() {
                 </select>
               </div>
 
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid rgba(159,189,217,0.24)' }}>
-                      {[t('clientDetail.metricRecords.colDate'), t('clientDetail.metricRecords.colMetric'), t('clientDetail.metricRecords.colType'), t('clientDetail.metricRecords.colValue'), t('clientDetail.metricRecords.colUnit')].map((label, index) => (
-                        <th key={label} style={{ textAlign: index === 0 ? 'left' : 'center', padding: '8px 8px 12px', color: '#6B86A3', fontSize: 11, letterSpacing: '0.08em', fontWeight: 700 }}>{label.toUpperCase()}</th>
+              {isMobile ? (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {metricRecordsPageRows.map((entry) => (
+                    <div key={entry.id} style={{ border: '1px solid rgba(159,189,217,0.28)', borderRadius: 12, padding: '10px 10px 9px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#10253C' }}>{entry.metricDefinition?.name || '-'}</div>
+                        <div style={{ fontSize: 11, color: '#6B86A3', whiteSpace: 'nowrap' }}>{formatDisplayDate(entry.recordedAt, locale)}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                        <span style={{ fontSize: 11, borderRadius: 999, padding: '4px 8px', background: '#EDF5FC', color: '#2C4F73', fontWeight: 700 }}>{entry.metricDefinition?.type || '-'}</span>
+                        <span style={{ fontSize: 11, borderRadius: 999, padding: '4px 8px', background: '#F3F8FD', color: '#4E6B85', fontWeight: 700 }}>{entry.metricDefinition?.unit || '-'}</span>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 13, color: '#10253C' }}>
+                        {t('clientDetail.metricRecords.colValue')}: <strong>{formatMetricValue(entry)}</strong>
+                      </div>
+                    </div>
+                  ))}
+                  {metricRecordsPageRows.length === 0 ? (
+                    <div style={{ padding: '10px 8px', textAlign: 'center', color: '#6B86A3', fontSize: 13 }}>{t('clientDetail.metricRecords.empty')}</div>
+                  ) : null}
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(159,189,217,0.24)' }}>
+                        {[t('clientDetail.metricRecords.colDate'), t('clientDetail.metricRecords.colMetric'), t('clientDetail.metricRecords.colType'), t('clientDetail.metricRecords.colValue'), t('clientDetail.metricRecords.colUnit')].map((label, index) => (
+                          <th key={label} style={{ textAlign: index === 0 ? 'left' : 'center', padding: '8px 8px 12px', color: '#6B86A3', fontSize: 11, letterSpacing: '0.08em', fontWeight: 700 }}>{label.toUpperCase()}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metricRecordsPageRows.map((entry, index) => (
+                        <tr key={entry.id} style={{ borderBottom: index < metricRecordsPageRows.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
+                          <td style={{ padding: '11px 8px 11px 0', color: '#10253C', fontWeight: 700 }}>{formatDisplayDate(entry.recordedAt, locale)}</td>
+                          <td style={{ textAlign: 'center', padding: '11px 8px', color: '#10253C' }}>{entry.metricDefinition?.name || '-'}</td>
+                          <td style={{ textAlign: 'center', padding: '11px 8px', color: '#6B86A3' }}>{entry.metricDefinition?.type || '-'}</td>
+                          <td style={{ textAlign: 'center', padding: '11px 8px', color: '#10253C', fontWeight: 700 }}>{formatMetricValue(entry)}</td>
+                          <td style={{ textAlign: 'center', padding: '11px 8px', color: '#6B86A3' }}>{entry.metricDefinition?.unit || '-'}</td>
+                        </tr>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {metricRecordsPageRows.map((entry, index) => (
-                      <tr key={entry.id} style={{ borderBottom: index < metricRecordsPageRows.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
-                        <td style={{ padding: '11px 8px 11px 0', color: '#10253C', fontWeight: 700 }}>{formatDisplayDate(entry.recordedAt, locale)}</td>
-                        <td style={{ textAlign: 'center', padding: '11px 8px', color: '#10253C' }}>{entry.metricDefinition?.name || '-'}</td>
-                        <td style={{ textAlign: 'center', padding: '11px 8px', color: '#6B86A3' }}>{entry.metricDefinition?.type || '-'}</td>
-                        <td style={{ textAlign: 'center', padding: '11px 8px', color: '#10253C', fontWeight: 700 }}>{formatMetricValue(entry)}</td>
-                        <td style={{ textAlign: 'center', padding: '11px 8px', color: '#6B86A3' }}>{entry.metricDefinition?.unit || '-'}</td>
-                      </tr>
-                    ))}
-                    {metricRecordsPageRows.length === 0 && (
-                      <tr>
-                        <td colSpan={5} style={{ padding: '14px 8px', textAlign: 'center', color: '#6B86A3' }}>{t('clientDetail.metricRecords.empty')}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      {metricRecordsPageRows.length === 0 && (
+                        <tr>
+                          <td colSpan={5} style={{ padding: '14px 8px', textAlign: 'center', color: '#6B86A3' }}>{t('clientDetail.metricRecords.empty')}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 12, color: '#6B86A3' }}>
@@ -1971,6 +1995,38 @@ export default function ClientDetailPage() {
                   <div style={{ fontSize: 12, color: '#6B86A3' }}>{t('clientDetail.filesManager.chooseFolder')}</div>
                 ) : (selectedFileFolder.items || []).length === 0 ? (
                   <div style={{ fontSize: 12, color: '#6B86A3' }}>{t('clientDetail.filesManager.emptyFolder')}</div>
+                ) : isMobile ? (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {(selectedFileFolder.items || []).map((item) => (
+                      <div key={item.id} style={{ border: '1px solid #E6EEF6', borderRadius: 12, padding: '10px 10px 9px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#10253C' }}>{item.title}</div>
+                          <span style={{ fontSize: 11, color: '#6B86A3', whiteSpace: 'nowrap' }}>{formatDisplayDate(item.createdAt, locale)}</span>
+                        </div>
+
+                        <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 11, borderRadius: 999, padding: '4px 8px', background: '#EDF5FC', color: '#2C4F73', fontWeight: 700 }}>
+                            {item.type === 'LINK' ? t('clientDetail.filesManager.typeLink') : t('clientDetail.filesManager.typeFile')}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                          {item.type === 'LINK' ? (
+                            <QuickActionButton onClick={() => window.open(item.externalUrl, '_blank', 'noopener,noreferrer')}>
+                              {t('clientDetail.filesManager.open')}
+                            </QuickActionButton>
+                          ) : (
+                            <QuickActionButton onClick={() => downloadFileItem(item)}>
+                              {t('clientDetail.filesManager.download')}
+                            </QuickActionButton>
+                          )}
+                          <QuickActionButton onClick={() => removeFileItem(item.id)} disabled={savingFiles}>
+                            {t('clientDetail.filesManager.delete')}
+                          </QuickActionButton>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse', fontSize: 13 }}>

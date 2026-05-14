@@ -239,23 +239,31 @@ export default function ClientsPage() {
     <div style={{ padding: isMobile ? '16px 14px 20px' : '28px 32px' }}>
       <section style={{
         background: 'linear-gradient(135deg, #10253C 0%, #1D3C5A 52%, #5682B1 100%)',
-        borderRadius: 28,
-        padding: isMobile ? '22px 18px' : '28px 30px',
+        borderRadius: isMobile ? 20 : 28,
+        padding: isMobile ? '16px 14px' : '28px 30px',
         color: '#FFFFFF',
         boxShadow: '0 24px 50px rgba(16,37,60,0.24)',
-        marginBottom: 18,
+        marginBottom: isMobile ? 14 : 18,
       }}>
-        <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'flex-start', justifyContent: 'space-between', marginBottom: 20, flexDirection: isMobile ? 'column' : 'row', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'flex-start', justifyContent: 'space-between', marginBottom: isMobile ? 0 : 20, flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 10 : 16 }}>
           <div style={{ maxWidth: 720 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#C8DBED', marginBottom: 12 }}>
-              {t('clients.title')}
-            </div>
-            <h1 style={{ fontSize: isMobile ? 24 : 34, lineHeight: 1.05, fontWeight: 800, margin: 0 }}>
-              {t('clients.activeCount', { count: clients.length })}
-            </h1>
-            <p style={{ fontSize: isMobile ? 14 : 16, lineHeight: 1.6, color: '#E4EFF9', margin: '14px 0 0', maxWidth: 620 }}>
-              {t('clients.portfolioSummary', { amount: formatCurrency(rosterStats.monthlyRevenue), attention: rosterStats.clientsNeedingAttention })}
-            </p>
+            {!isMobile ? (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#C8DBED', marginBottom: 12 }}>
+                  {t('clients.title')}
+                </div>
+                <h1 style={{ fontSize: 34, lineHeight: 1.05, fontWeight: 800, margin: 0 }}>
+                  {t('clients.activeCount', { count: clients.length })}
+                </h1>
+                <p style={{ fontSize: 16, lineHeight: 1.6, color: '#E4EFF9', margin: '14px 0 0', maxWidth: 620 }}>
+                  {t('clients.portfolioSummary', { amount: formatCurrency(rosterStats.monthlyRevenue), attention: rosterStats.clientsNeedingAttention })}
+                </p>
+              </>
+            ) : (
+              <h1 style={{ fontSize: 22, lineHeight: 1.1, fontWeight: 800, margin: 0 }}>
+                {t('clients.title')}
+              </h1>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 10, width: isMobile ? '100%' : 'auto', flexDirection: isMobile ? 'column' : 'row' }}>
             <button onClick={handleCreateOnlineLink} disabled={creatingOnlineLink} style={{
@@ -278,19 +286,21 @@ export default function ClientsPage() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
-          {[
-            { label: t('clients.monthlyRevenue'), value: formatCurrency(rosterStats.monthlyRevenue) },
-            { label: t('clients.onlineClients'), value: rosterStats.onlineClients },
-            { label: t('clients.clientsOnPackages'), value: rosterStats.clientsWithPackage },
-            { label: t('clients.followUpNeeded'), value: rosterStats.clientsNeedingAttention },
-          ].map((item) => (
-            <div key={item.label} style={{ padding: '14px 16px', borderRadius: 18, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#C8DBED' }}>{item.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: '#FFFFFF', marginTop: 8 }}>{item.value}</div>
-            </div>
-          ))}
-        </div>
+        {!isMobile ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
+            {[
+              { label: t('clients.monthlyRevenue'), value: formatCurrency(rosterStats.monthlyRevenue) },
+              { label: t('clients.onlineClients'), value: rosterStats.onlineClients },
+              { label: t('clients.clientsOnPackages'), value: rosterStats.clientsWithPackage },
+              { label: t('clients.followUpNeeded'), value: rosterStats.clientsNeedingAttention },
+            ].map((item) => (
+              <div key={item.label} style={{ padding: '14px 16px', borderRadius: 18, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#C8DBED' }}>{item.label}</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#FFFFFF', marginTop: 8 }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <div style={{ ...card, display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', flexDirection: isMobile ? 'column' : 'row', gap: 10, marginBottom: 18 }}>

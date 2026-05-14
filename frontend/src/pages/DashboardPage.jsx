@@ -237,27 +237,28 @@ export default function DashboardPage() {
       <section
         style={{
           background: 'linear-gradient(135deg, #10253C 0%, #1D3C5A 52%, #5682B1 100%)',
-          borderRadius: 28,
-          padding: isMobile ? '22px 18px' : '28px 30px',
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? '16px 14px' : '28px 30px',
           color: '#FFFFFF',
           boxShadow: '0 24px 50px rgba(16,37,60,0.24)',
-          marginBottom: 18,
+          marginBottom: isMobile ? 14 : 18,
         }}
       >
-        <div style={{ display: 'flex', flexDirection: isTablet ? 'column' : 'row', justifyContent: 'space-between', gap: 18 }}>
+        <div style={{ display: 'flex', flexDirection: isTablet || isMobile ? 'column' : 'row', justifyContent: 'space-between', gap: isMobile ? 12 : 18 }}>
           <div style={{ maxWidth: 720 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#C8DBED', marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#C8DBED', marginBottom: isMobile ? 8 : 12 }}>
               {monthLabel} {now.getFullYear()} · {t('dashboard.businessSummary')}
             </div>
-            <h1 style={{ fontSize: isMobile ? 24 : 34, lineHeight: 1.05, fontWeight: 800, margin: 0 }}>
+            <h1 style={{ fontSize: isMobile ? 21 : 34, lineHeight: 1.05, fontWeight: 800, margin: 0 }}>
               {t('dashboard.greeting', { name: user?.name?.split(' ')[0] })}
             </h1>
-            <p style={{ fontSize: isMobile ? 14 : 16, lineHeight: 1.6, color: '#E4EFF9', maxWidth: 640, margin: '14px 0 0' }}>
+            <p style={{ fontSize: isMobile ? 13 : 16, lineHeight: isMobile ? 1.45 : 1.6, color: '#E4EFF9', maxWidth: 640, margin: isMobile ? '8px 0 0' : '14px 0 0' }}>
               {focusMessage}
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(180px, 1fr))', gap: 10, minWidth: isTablet ? 'auto' : 380 }}>
+          {!isMobile ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))', gap: 10, minWidth: isTablet ? 'auto' : 380 }}>
             <Link
               to="/clients"
               style={{
@@ -321,7 +322,8 @@ export default function DashboardPage() {
               </div>
               <div style={{ fontSize: 16, fontWeight: 700, marginTop: 8 }}>{t('dashboard.newClient')}</div>
             </Link>
-          </div>
+            </div>
+          ) : null}
         </div>
       </section>
 

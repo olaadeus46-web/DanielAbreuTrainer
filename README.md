@@ -148,3 +148,20 @@ cd backend && npm run dev
 cd frontend && npm run build
 ```
 
+## Deploy (Netlify + dominio custom)
+
+No Netlify (Site settings > Environment variables):
+
+- `VITE_API_BASE_URL`: URL publica da tua API (exemplo: `https://api.danieltrainer.com/api`)
+
+No backend (`backend/.env` em produção):
+
+- `PUBLIC_APP_URL="https://danieltrainer.com"`
+- `CORS_ORIGIN="https://danieltrainer.com,https://www.danieltrainer.com"`
+
+Isto garante:
+
+- links publicos (check-in/feedback/online-client) com o dominio final;
+- frontend no dominio custom a comunicar com a API correta;
+- CORS a aceitar o dominio de produção.
+

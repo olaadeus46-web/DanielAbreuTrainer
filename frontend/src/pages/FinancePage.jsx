@@ -411,6 +411,8 @@ export default function FinancePage() {
   }, [data, stats]);
 
   const topPackage = packageCharts.length ? packageCharts[0] : null;
+  const statsChartHeight = isMobile ? 220 : 280;
+  const expenseCategoryTotal = expenseCategoryCharts.reduce((sum, item) => sum + Number(item.value || 0), 0);
 
   if (loading) return <BrandLoadingScreen />;
   if (!data || !overview) return null;
@@ -663,6 +665,43 @@ export default function FinancePage() {
       <div style={{ ...card, padding: isMobile ? '16px 14px' : '20px 24px' }}>
         {expensesData.items.length === 0 ? (
           <p style={{ margin: 0, fontSize: 13, color: '#6B86A3' }}>{t('finance.expenses.empty')}</p>
+        ) : isMobile ? (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {expensesData.items.map((expense) => (
+              <div key={expense.id} style={{ border: '1px solid rgba(159,189,217,0.3)', borderRadius: 14, padding: '12px 12px 10px', background: '#FFFFFF' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#10253C' }}>{expense.title}</div>
+                    <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 3 }}>{new Date(expense.expenseDate).toLocaleDateString(locale)}</div>
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#10253C', whiteSpace: 'nowrap' }}>{formatCurrency(expense.amount)}</div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                  <span style={{ fontSize: 11, borderRadius: 999, padding: '4px 8px', background: '#EDF5FC', color: '#2C4F73', fontWeight: 700 }}>{expense.category || '-'}</span>
+                  <span style={{ fontSize: 11, borderRadius: 999, padding: '4px 8px', background: '#F5EEF7', color: '#5A3A73', fontWeight: 700 }}>{expense.type || 'FIXED'}</span>
+                </div>
+
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                  {expense.attachments?.length ? (
+                    <button
+                      type="button"
+                      onClick={() => onDownloadExpenseAttachment(expense)}
+                      style={{ border: '1px solid #9FBDD9', color: '#2C4F73', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      {t('finance.expenses.download')}
+                    </button>
+                  ) : null}
+                  <button type="button" onClick={() => openEditExpense(expense)} style={{ border: '1px solid #9FBDD9', color: '#2C4F73', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}>
+                    {t('common.edit')}
+                  </button>
+                  <button type="button" onClick={() => onDeleteExpense(expense)} style={{ border: '1px solid #D9A2A2', color: '#9F4A4A', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', cursor: 'pointer', fontWeight: 700 }}>
+                    {t('packages.delete')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
@@ -722,7 +761,7 @@ export default function FinancePage() {
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.collectionTrend')}</div>
           <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.collectionTrendHint')}</div>
-          <div style={{ width: '100%', height: 280 }}>
+          <div style={{ width: '100%', height: statsChartHeight }}>
             <ResponsiveContainer>
               <LineChart data={monthlyCharts} margin={{ left: 8, right: 8, top: 4, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(159,189,217,0.24)" vertical={false} />
@@ -740,7 +779,7 @@ export default function FinancePage() {
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.clientsPerPackage')}</div>
           <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.revenueByPackage')}</div>
-          <div style={{ width: '100%', height: 280 }}>
+          <div style={{ width: '100%', height: statsChartHeight }}>
             <ResponsiveContainer>
               <BarChart data={packageCharts} layout="vertical" margin={{ left: 8, right: 8, top: 4, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(159,189,217,0.24)" horizontal={false} />
@@ -758,7 +797,7 @@ export default function FinancePage() {
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.revenueVsExpenses')}</div>
           <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.revenueVsExpensesHint')}</div>
-          <div style={{ width: '100%', height: 280 }}>
+          <div style={{ width: '100%', height: statsChartHeight }}>
             <ResponsiveContainer>
               <BarChart data={revenueVsExpenseCharts} margin={{ left: 8, right: 8, top: 4, bottom: 0 }}>
                 <CartesianGrid stroke="rgba(159,189,217,0.24)" vertical={false} />
@@ -776,7 +815,7 @@ export default function FinancePage() {
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.yearlyRevenueExpenses')}</div>
           <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.yearlyRevenueExpensesHint')}</div>
-          <div style={{ width: '100%', height: 280 }}>
+          <div style={{ width: '100%', height: statsChartHeight }}>
             <ResponsiveContainer>
               <LineChart
                 data={yearlyRevenueCharts.map((item, idx) => ({
@@ -817,40 +856,66 @@ export default function FinancePage() {
               </select>
             </div>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 620, borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(159,189,217,0.24)' }}>
-                  {[t('finance.monthCol'), t('finance.received'), t('finance.expenses.title'), t('finance.netResult')].map((label, index) => (
-                    <th key={label} style={{ textAlign: index === 0 ? 'left' : 'center', padding: '8px 8px 12px', color: '#6B86A3', fontSize: 11, letterSpacing: '0.08em', fontWeight: 700 }}>
-                      {label.toUpperCase()}
-                    </th>
+          {isMobile ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {filteredRevenueVsExpenseRows.map((row) => (
+                <div key={`${row.year}-${row.month}`} style={{ border: '1px solid rgba(159,189,217,0.3)', borderRadius: 14, padding: '12px 12px 10px' }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{row.label} {row.year}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ background: '#F4FBF6', borderRadius: 10, padding: '8px 10px' }}>
+                      <div style={{ fontSize: 10, color: '#5F806A', textTransform: 'uppercase', fontWeight: 700 }}>{t('finance.received')}</div>
+                      <div style={{ fontSize: 13, color: '#2D7A47', fontWeight: 800, marginTop: 2 }}>{formatCurrency(row.revenue)}</div>
+                    </div>
+                    <div style={{ background: '#FEF4F4', borderRadius: 10, padding: '8px 10px' }}>
+                      <div style={{ fontSize: 10, color: '#8F5A5A', textTransform: 'uppercase', fontWeight: 700 }}>{t('finance.expenses.title')}</div>
+                      <div style={{ fontSize: 13, color: '#9F4A4A', fontWeight: 800, marginTop: 2 }}>{formatCurrency(row.expenses)}</div>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#6B86A3' }}>
+                    {t('finance.netResult')}: <strong style={{ color: row.net >= 0 ? '#2D7A47' : '#9F4A4A' }}>{formatCurrency(row.net)}</strong>
+                  </div>
+                </div>
+              ))}
+              {filteredRevenueVsExpenseRows.length === 0 ? (
+                <div style={{ padding: '10px 8px', textAlign: 'center', color: '#6B86A3', fontSize: 13 }}>{t('finance.expenses.empty')}</div>
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: 620, borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(159,189,217,0.24)' }}>
+                    {[t('finance.monthCol'), t('finance.received'), t('finance.expenses.title'), t('finance.netResult')].map((label, index) => (
+                      <th key={label} style={{ textAlign: index === 0 ? 'left' : 'center', padding: '8px 8px 12px', color: '#6B86A3', fontSize: 11, letterSpacing: '0.08em', fontWeight: 700 }}>
+                        {label.toUpperCase()}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRevenueVsExpenseRows.map((row, index) => (
+                    <tr key={`${row.year}-${row.month}`} style={{ borderBottom: index < filteredRevenueVsExpenseRows.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
+                      <td style={{ padding: '12px 8px 12px 0', color: '#10253C', fontWeight: 700 }}>{row.label} {row.year}</td>
+                      <td style={{ textAlign: 'center', padding: '12px 8px', color: '#2D7A47', fontWeight: 700 }}>{formatCurrency(row.revenue)}</td>
+                      <td style={{ textAlign: 'center', padding: '12px 8px', color: '#9F4A4A', fontWeight: 700 }}>{formatCurrency(row.expenses)}</td>
+                      <td style={{ textAlign: 'center', padding: '12px 8px', color: row.net >= 0 ? '#2D7A47' : '#9F4A4A', fontWeight: 700 }}>{formatCurrency(row.net)}</td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRevenueVsExpenseRows.map((row, index) => (
-                  <tr key={`${row.year}-${row.month}`} style={{ borderBottom: index < filteredRevenueVsExpenseRows.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
-                    <td style={{ padding: '12px 8px 12px 0', color: '#10253C', fontWeight: 700 }}>{row.label} {row.year}</td>
-                    <td style={{ textAlign: 'center', padding: '12px 8px', color: '#2D7A47', fontWeight: 700 }}>{formatCurrency(row.revenue)}</td>
-                    <td style={{ textAlign: 'center', padding: '12px 8px', color: '#9F4A4A', fontWeight: 700 }}>{formatCurrency(row.expenses)}</td>
-                    <td style={{ textAlign: 'center', padding: '12px 8px', color: row.net >= 0 ? '#2D7A47' : '#9F4A4A', fontWeight: 700 }}>{formatCurrency(row.net)}</td>
-                  </tr>
-                ))}
-                {filteredRevenueVsExpenseRows.length === 0 && (
-                  <tr>
-                    <td colSpan={4} style={{ padding: '14px 8px', textAlign: 'center', color: '#6B86A3' }}>{t('finance.expenses.empty')}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  {filteredRevenueVsExpenseRows.length === 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: '14px 8px', textAlign: 'center', color: '#6B86A3' }}>{t('finance.expenses.empty')}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#10253C', marginBottom: 8 }}>{t('finance.expensesByCategory')}</div>
           <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 12 }}>{t('finance.expensesByCategoryHint')}</div>
-          <div style={{ width: '100%', height: 280 }}>
+          <div style={{ width: '100%', height: statsChartHeight }}>
             <ResponsiveContainer>
               <PieChart>
                 <Pie data={expenseCategoryCharts} dataKey="value" nameKey="name" outerRadius={95} innerRadius={55} paddingAngle={2}>
@@ -859,10 +924,26 @@ export default function FinancePage() {
                   ))}
                 </Pie>
                 <Tooltip formatter={(value) => formatCurrency(value)} />
-                <Legend />
+                {!isMobile ? <Legend /> : null}
               </PieChart>
             </ResponsiveContainer>
           </div>
+          {isMobile && expenseCategoryCharts.length > 0 ? (
+            <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+              {expenseCategoryCharts.map((item, index) => {
+                const pct = expenseCategoryTotal > 0 ? Math.round((Number(item.value || 0) / expenseCategoryTotal) * 100) : 0;
+                return (
+                  <div key={item.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#2C4F73', minWidth: 0 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 999, background: ['#9F4A4A', '#B66A17', '#5682B1', '#2D7A47', '#739EC9'][index % 5], flexShrink: 0 }} />
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</span>
+                    </div>
+                    <strong style={{ color: '#10253C', whiteSpace: 'nowrap' }}>{formatCurrency(item.value)} ({pct}%)</strong>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </div>
     </>
@@ -873,24 +954,24 @@ export default function FinancePage() {
       <section
         style={{
           background: 'linear-gradient(135deg, #10253C 0%, #1D3C5A 52%, #5682B1 100%)',
-          borderRadius: 28,
-          padding: isMobile ? '22px 18px' : '28px 30px',
+          borderRadius: isMobile ? 20 : 28,
+          padding: isMobile ? '16px 14px' : '28px 30px',
           color: '#FFFFFF',
           boxShadow: '0 24px 50px rgba(16,37,60,0.24)',
-          marginBottom: 18,
+          marginBottom: isMobile ? 14 : 18,
         }}
       >
         <div style={{ display: 'flex', flexDirection: isTablet ? 'column' : 'row', justifyContent: 'space-between', gap: 16 }}>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C8DBED', marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#C8DBED', marginBottom: 6 }}>
               {monthName} {now.getFullYear()}
             </div>
-            <h1 style={{ margin: 0, fontSize: isMobile ? 24 : 34, lineHeight: 1.06, fontWeight: 800 }}>{t('finance.title')}</h1>
-            <p style={{ margin: '12px 0 0', maxWidth: 680, fontSize: isMobile ? 14 : 16, lineHeight: 1.55, color: '#E4EFF9' }}>
+            <h1 style={{ margin: 0, fontSize: isMobile ? 21 : 34, lineHeight: 1.06, fontWeight: 800 }}>{t('finance.title')}</h1>
+            <p style={{ margin: '8px 0 0', maxWidth: 680, fontSize: isMobile ? 13 : 16, lineHeight: 1.45, color: '#E4EFF9' }}>
               {t('finance.subtitle')}
             </p>
           </div>
-          <div style={{ minWidth: isTablet ? 'auto' : 320, alignSelf: 'stretch' }}>
+          <div style={{ minWidth: isTablet ? 'auto' : 320, alignSelf: 'stretch', width: isMobile ? '100%' : 'auto' }}>
             <div style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 16, padding: '14px 16px' }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#C8DBED' }}>{t('finance.todayPriority')}</div>
               <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.45, fontWeight: 600 }}>{focusMessage}</div>
@@ -899,7 +980,7 @@ export default function FinancePage() {
         </div>
       </section>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', paddingBottom: isMobile ? 2 : 0 }}>
         {[
           { key: 'status', label: t('finance.statusByClientTab') },
           { key: 'packages', label: t('finance.monthlyPackagesTab') },
@@ -917,8 +998,10 @@ export default function FinancePage() {
               borderRadius: 999,
               fontSize: 12,
               fontWeight: 700,
-              padding: '8px 13px',
+              padding: isMobile ? '8px 12px' : '8px 13px',
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             {tab.label}
