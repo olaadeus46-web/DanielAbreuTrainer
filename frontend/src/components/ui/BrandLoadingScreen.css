@@ -1,0 +1,113 @@
+.da-loading-root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+}
+
+.da-loading-inline {
+  min-height: 60vh;
+  padding: 24px 16px;
+  background: transparent;
+}
+
+.da-loading-fullscreen {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 9999;
+}
+
+.da-loading-small {
+  --da-ring-size: 144px;
+  --da-logo-width: min(170px, 60vw);
+}
+
+.da-loading-large {
+  --da-ring-size: 260px;
+  --da-logo-width: min(300px, 82vw);
+}
+
+.da-logo-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.da-glow-ring {
+  position: absolute;
+  width: var(--da-ring-size);
+  height: var(--da-ring-size);
+  border-radius: 50%;
+  border: 2px solid #5682b1;
+  opacity: 0;
+  animation: daRingPulse 2.4s ease-out infinite;
+}
+
+.da-glow-ring:nth-child(2) {
+  animation-delay: 0.8s;
+}
+
+.da-glow-ring:nth-child(3) {
+  animation-delay: 1.6s;
+}
+
+@keyframes daRingPulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.6;
+  }
+
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.da-logo-svg {
+  width: var(--da-logo-width);
+  position: relative;
+  z-index: 2;
+}
+
+.da-letter-d {
+  opacity: 1;
+}
+
+.da-letter-a {
+  opacity: 1;
+}
+
+.da-bar-left {
+  transform-origin: right center;
+  opacity: 1;
+}
+
+.da-bar-right {
+  transform-origin: left center;
+  opacity: 1;
+}
+
+.da-plate-left {
+  opacity: 1;
+}
+
+.da-plate-right {
+  opacity: 1;
+}
+
+.da-scanlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 10;
+}

@@ -1,0 +1,49 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Daniel Abreu PT — App Icon</title>
+
+  <rect width="1024" height="1024" rx="230" fill="#000000"/>
+  <rect x="18" y="18" width="988" height="988" rx="216" fill="none" stroke="#5682B1" stroke-width="4" stroke-opacity="0.3"/>
+  <rect x="0" y="0" width="1024" height="6" rx="3" fill="#5682B1" opacity="0.5"/>
+
+  <text x="372" y="590" font-family="'Arial Black','Helvetica Neue',sans-serif" font-size="520" fill="#FFFFFF" text-anchor="middle">D</text>
+  <text x="652" y="590" font-family="'Arial Black','Helvetica Neue',sans-serif" font-size="520" fill="#FFFFFF" text-anchor="middle">A</text>
+
+  <rect x="126" y="354" width="386" height="46" rx="10" fill="#5682B1"/>
+  <rect x="126" y="354" width="386" height="13" rx="6"  fill="#739EC9" opacity="0.7"/>
+  <rect x="126" y="378" width="386" height="22" rx="8"  fill="#000000" opacity="0.4"/>
+
+  <rect x="512" y="354" width="386" height="46" rx="10" fill="#5682B1"/>
+  <rect x="512" y="354" width="386" height="13" rx="6"  fill="#739EC9" opacity="0.7"/>
+  <rect x="512" y="378" width="386" height="22" rx="8"  fill="#000000" opacity="0.4"/>
+
+  <line x1="462" y1="360" x2="462" y2="396" stroke="#000" stroke-width="4" stroke-opacity="0.45"/>
+  <line x1="482" y1="360" x2="482" y2="396" stroke="#000" stroke-width="4" stroke-opacity="0.45"/>
+  <line x1="502" y1="360" x2="502" y2="396" stroke="#000" stroke-width="5" stroke-opacity="0.45"/>
+  <line x1="512" y1="360" x2="512" y2="396" stroke="#000" stroke-width="6" stroke-opacity="0.45"/>
+  <line x1="522" y1="360" x2="522" y2="396" stroke="#000" stroke-width="5" stroke-opacity="0.45"/>
+  <line x1="542" y1="360" x2="542" y2="396" stroke="#000" stroke-width="4" stroke-opacity="0.45"/>
+  <line x1="562" y1="360" x2="562" y2="396" stroke="#000" stroke-width="4" stroke-opacity="0.45"/>
+
+  <rect x="108" y="335" width="36" height="84" rx="7" fill="#739EC9"/>
+  <rect x="880" y="335" width="36" height="84" rx="7" fill="#739EC9"/>
+
+  <rect x="62"  y="213" width="54" height="328" rx="10" fill="#5682B1"/>
+  <rect x="62"  y="213" width="54" height="328" rx="10" fill="none" stroke="#739EC9" stroke-width="2" stroke-opacity="0.4"/>
+  <rect x="74"  y="233" width="30" height="288" rx="6"  fill="#000000" opacity="0.5"/>
+
+  <rect x="22"  y="228" width="42" height="298" rx="9" fill="#5682B1"/>
+  <rect x="22"  y="228" width="42" height="298" rx="9" fill="none" stroke="#739EC9" stroke-width="2" stroke-opacity="0.4"/>
+  <rect x="33"  y="248" width="20" height="258" rx="5" fill="#000000" opacity="0.5"/>
+
+  <rect x="908" y="213" width="54" height="328" rx="10" fill="#5682B1"/>
+  <rect x="908" y="213" width="54" height="328" rx="10" fill="none" stroke="#739EC9" stroke-width="2" stroke-opacity="0.4"/>
+  <rect x="920" y="233" width="30" height="288" rx="6"  fill="#000000" opacity="0.5"/>
+
+  <rect x="960" y="228" width="42" height="298" rx="9" fill="#5682B1"/>
+  <rect x="960" y="228" width="42" height="298" rx="9" fill="none" stroke="#739EC9" stroke-width="2" stroke-opacity="0.4"/>
+  <rect x="971" y="248" width="20" height="258" rx="5" fill="#000000" opacity="0.5"/>
+
+  <rect x="312" y="720" width="400" height="2" rx="1" fill="#5682B1" opacity="0.4"/>
+  <text x="512" y="800" font-family="Arial,'Helvetica Neue',sans-serif" font-size="52" fill="#5682B1" text-anchor="middle" letter-spacing="18">PERSONAL TRAINER</text>
+
+</svg>

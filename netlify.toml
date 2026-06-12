@@ -1,0 +1,24 @@
+[build]
+  command = "npm --prefix frontend ci && npm --prefix frontend run build && frontend/node_modules/.bin/esbuild netlify/function-src/api.js --bundle --platform=node --format=cjs --target=node20 --outfile=netlify/functions-built/api.js"
+  publish = "frontend/dist"
+
+[functions]
+  directory = "netlify/functions-built"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/api/health"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+uploads/
+*.log
+npm-debug.log*
+.DS_Store
+
+# Local Netlify folder
+.netlify
+netlify/functions-built/
