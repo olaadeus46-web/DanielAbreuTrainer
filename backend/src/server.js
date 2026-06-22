@@ -22,9 +22,12 @@ import { prisma } from './config/database.js';
 import { errorHandler }    from './middleware/errorHandler.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 
-const moduleUrl = typeof import.meta !== 'undefined' && typeof import.meta.url === 'string' ? import.meta.url : undefined;
-const __filename = moduleUrl ? fileURLToPath(moduleUrl) : path.resolve(process.cwd(), 'backend/src/server.js');
-const __dirname = path.dirname(__filename);
+let __dirname;
+try {
+  __dirname = path.dirname(fileURLToPath(import.meta.url));
+} catch {
+  __dirname = process.cwd();
+}
 const app = express();
 const PORT = process.env.PORT || 3001;
 
