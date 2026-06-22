@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/requireRole.js';
 import {
@@ -19,15 +18,13 @@ import {
   sendWelcomeEmail,
 } from '../controllers/automation.controller.js';
 
-let __dirname;
-try {
-  __dirname = path.dirname(fileURLToPath(import.meta.url));
-} catch {
-  __dirname = process.cwd();
-}
+const isServerlessRuntime = Boolean(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const uploadDir = isServerlessRuntime
+  ? path.join('/tmp', 'uploads', 'automation-attachments')
+  : path.resolve(process.cwd(), 'uploads', 'automation-attachments');
 
 const storage = multer.diskStorage({
-  destination: path.join(__dirname, '../../uploads/automation-attachments'),
+  destination: uploadDir,
   filename: (_req, file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     cb(null, `${unique}-${file.originalname}`);
