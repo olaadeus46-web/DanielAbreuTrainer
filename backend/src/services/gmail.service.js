@@ -57,7 +57,9 @@ export async function sendEmail({ refreshToken, senderEmail, to, subject, html, 
     html,
     attachments: attachments.map((att) => ({
       filename: att.originalName || att.filename,
-      path: att.path,
+      ...(att.content
+        ? { content: Buffer.from(att.content, 'base64') }
+        : { path: att.path }),
     })),
   });
 

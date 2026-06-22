@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import '../config/env.js';
 import { prisma } from '../config/database.js';
@@ -674,10 +675,12 @@ export const uploadAttachment = async (req, res, next) => {
   try {
     await getTrainerOrThrow(req.userId);
     if (!req.file) throw new AppError('Nenhum ficheiro enviado.', 400);
+    const content = fs.readFileSync(req.file.path).toString('base64');
+    fs.unlinkSync(req.file.path);
     res.json({
       filename: req.file.filename,
       originalName: req.file.originalname,
-      path: req.file.path,
+      content,
       size: req.file.size,
     });
   } catch (err) { next(err); }
