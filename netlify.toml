@@ -1,5 +1,5 @@
 [build]
-  command = "npm --prefix frontend ci && npm --prefix frontend run build && frontend/node_modules/.bin/esbuild netlify/function-src/api.js --bundle --platform=node --format=cjs --target=node20 --outfile=netlify/functions-built/api.js"
+  command = "npm --prefix frontend ci && npm --prefix frontend run build && frontend/node_modules/.bin/esbuild netlify/function-src/api.js --bundle --platform=node --format=cjs --target=node20 --external:node-cron --outfile=netlify/functions-built/api.js"
   publish = "frontend/dist"
 
 [functions]

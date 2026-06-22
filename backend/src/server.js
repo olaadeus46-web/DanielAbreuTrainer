@@ -7,7 +7,6 @@ import './config/env.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
-import cron from 'node-cron';
 import authRoutes       from './routes/auth.routes.js';
 import clientRoutes     from './routes/client.routes.js';
 import metricRoutes     from './routes/metric.routes.js';
@@ -88,28 +87,29 @@ if (!isServerlessRuntime) {
     console.log(`   Docs:   http://localhost:${PORT}/health`);
     console.log(`   Env:    ${process.env.NODE_ENV || 'development'}\n`);
   });
-}
 
-// ── Automation scheduler: check every minute for pending automations ──────────
-cron.schedule('* * * * *', async () => {
-  try {
-    const now = Date.now();
-    const pending = await prisma.automation.findMany({
-      where: { status: 'PENDING', sendMode: 'SCHEDULED' },
-    });
-    const due = pending.filter((a) => a.scheduledAt && new Date(a.scheduledAt).getTime() <= now);
-    for (const automation of due) {
+  import('node-cron').then(({ default: cron }) => {
+    cron.schedule('* * * * *', async () => {
       try {
-        console.log(`[cron] Executing automation: ${automation.name} (${automation.id})`);
-        await executeAutomationById(automation.id);
+        const now = Date.now();
+        const pending = await prisma.automation.findMany({
+          where: { status: 'PENDING', sendMode: 'SCHEDULED' },
+        });
+        const due = pending.filter((a) => a.scheduledAt && new Date(a.scheduledAt).getTime() <= now);
+        for (const automation of due) {
+          try {
+            console.log(`[cron] Executing automation: ${automation.name} (${automation.id})`);
+            await executeAutomationById(automation.id);
+          } catch (err) {
+            console.error(`[cron] Failed automation ${automation.id}:`, err.message);
+          }
+        }
       } catch (err) {
-        console.error(`[cron] Failed automation ${automation.id}:`, err.message);
+        console.error('[cron] Scheduler error:', err.message);
       }
-    }
-  } catch (err) {
-    console.error('[cron] Scheduler error:', err.message);
-  }
-});
+    });
+  });
+}
 
 export default app;
 
