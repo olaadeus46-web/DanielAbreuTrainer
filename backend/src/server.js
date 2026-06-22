@@ -87,14 +87,14 @@ if (!isServerlessRuntime) {
   });
 }
 
-// ── Automation scheduler: check every 15 min for pending automations ─────────
-cron.schedule('*/15 * * * *', async () => {
+// ── Automation scheduler: check every minute for pending automations ──────────
+cron.schedule('* * * * *', async () => {
   try {
-    const now = new Date().toISOString();
+    const now = Date.now();
     const pending = await prisma.automation.findMany({
       where: { status: 'PENDING', sendMode: 'SCHEDULED' },
     });
-    const due = pending.filter((a) => a.scheduledAt && a.scheduledAt <= now);
+    const due = pending.filter((a) => a.scheduledAt && new Date(a.scheduledAt).getTime() <= now);
     for (const automation of due) {
       try {
         console.log(`[cron] Executing automation: ${automation.name} (${automation.id})`);

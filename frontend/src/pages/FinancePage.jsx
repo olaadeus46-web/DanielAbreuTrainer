@@ -135,6 +135,35 @@ export default function FinancePage() {
   const [expenseFile, setExpenseFile] = useState(null);
   const [savingExpense, setSavingExpense] = useState(false);
   const [statsYearFilter, setStatsYearFilter] = useState('ALL');
+  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth() + 1);
+  const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
+  const [showExpectedModal, setShowExpectedModal] = useState(false);
+  const [editingExpectedClient, setEditingExpectedClient] = useState(null);
+  const [expectedAmountInput, setExpectedAmountInput] = useState('');
+  const [savingExpected, setSavingExpected] = useState(false);
+
+  const isCurrentMonth = viewMonth === new Date().getMonth() + 1 && viewYear === new Date().getFullYear();
+
+  const goToPrevMonth = () => {
+    setViewMonth((m) => {
+      if (m === 1) {
+        setViewYear((y) => y - 1);
+        return 12;
+      }
+      return m - 1;
+    });
+  };
+
+  const goToNextMonth = () => {
+    if (isCurrentMonth) return;
+    setViewMonth((m) => {
+      if (m === 12) {
+        setViewYear((y) => y + 1);
+        return 1;
+      }
+      return m + 1;
+    });
+  };
 
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
@@ -144,7 +173,10 @@ export default function FinancePage() {
   }, [searchParams]);
 
   const loadFinance = async () => {
-    const results = await Promise.allSettled([financeApi.overview(), financeApi.stats()]);
+    const results = await Promise.allSettled([
+      financeApi.overview({ month: viewMonth, year: viewYear }),
+      financeApi.stats(),
+    ]);
     if (results[0].status === 'fulfilled') setData(results[0].value.data);
     if (results[1].status === 'fulfilled') setStats(results[1].value.data);
   };
@@ -170,21 +202,46 @@ export default function FinancePage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [viewMonth, viewYear]);
 
   const togglePayment = async (clientId, currentStatus) => {
     const newStatus = currentStatus === 'PAID' ? 'PENDING' : 'PAID';
     setUpdating(clientId);
     try {
-      const now = new Date();
       await financeApi.updatePayment(clientId, {
-        month: now.getMonth() + 1,
-        year: now.getFullYear(),
+        month: viewMonth,
+        year: viewYear,
         status: newStatus,
       });
       await loadFinance();
     } finally {
       setUpdating(null);
+    }
+  };
+
+  const openExpectedModal = (client) => {
+    setEditingExpectedClient(client);
+    setExpectedAmountInput(client.expectedAmount > 0 ? String(client.expectedAmount) : '');
+    setShowExpectedModal(true);
+  };
+
+  const onSaveExpected = async (value) => {
+    if (!editingExpectedClient) return;
+    setSavingExpected(true);
+    try {
+      await financeApi.updateExpectedAmount(editingExpectedClient.clientId, {
+        month: viewMonth,
+        year: viewYear,
+        amount: Number(value),
+      });
+      setShowExpectedModal(false);
+      setEditingExpectedClient(null);
+      setExpectedAmountInput('');
+      await loadFinance();
+    } catch (err) {
+      showError(err.response?.data?.error || t('finance.expectedError'));
+    } finally {
+      setSavingExpected(false);
     }
   };
 
@@ -336,8 +393,8 @@ export default function FinancePage() {
   };
 
   const locale = { en: 'en-US', pt: 'pt-PT', de: 'de-DE' }[i18n.language] || 'en-US';
-  const now = new Date();
-  const monthName = now.toLocaleDateString(locale, { month: 'long' });
+  const viewDate = new Date(viewYear, viewMonth - 1, 1);
+  const monthName = viewDate.toLocaleDateString(locale, { month: 'long' });
 
   const monthlyCharts = useMemo(() => {
     if (!stats?.monthlySeries) return [];
@@ -389,7 +446,7 @@ export default function FinancePage() {
         const statusWeight = { OVERDUE: 0, PENDING: 1, PAID: 2 };
         const byStatus = statusWeight[left.paymentStatus] - statusWeight[right.paymentStatus];
         if (byStatus !== 0) return byStatus;
-        return Number(right.monthlyPrice || 0) - Number(left.monthlyPrice || 0);
+        return Number(right.expectedAmount || 0) - Number(left.expectedAmount || 0);
       });
     const unpaidCount = unpaidClients.length;
     const collectionRate = data.totalExpected > 0 ? (data.totalReceived / data.totalExpected) * 100 : 0;
@@ -438,7 +495,10 @@ export default function FinancePage() {
         <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px' }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: '#10253C', marginBottom: 10 }}>{t('finance.billingProgress')}</div>
           <div style={{ fontSize: 13, color: '#6B86A3', marginBottom: 14 }}>
-            {t('finance.statusOverview', { month: monthName, year: now.getFullYear() })}
+            {t('finance.statusOverview', { month: monthName, year: viewYear })}
+          </div>
+          <div style={{ fontSize: 12, color: '#5682B1', marginBottom: 14, padding: '8px 10px', background: '#F7FBFF', borderRadius: 10, border: '1px solid rgba(159,189,217,0.3)' }}>
+            {t('finance.monthResetHint')}
           </div>
           <div style={{ height: 12, background: '#EDF5FC', borderRadius: 999, overflow: 'hidden' }}>
             <div
@@ -478,7 +538,7 @@ export default function FinancePage() {
             >
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#10253C' }}>{client.clientName}</div>
-                <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 2 }}>{formatCurrency(client.monthlyPrice)}</div>
+                <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 2 }}>{formatCurrency(client.expectedAmount)}</div>
               </div>
               <PayBadge status={client.paymentStatus} />
             </div>
@@ -518,7 +578,36 @@ export default function FinancePage() {
               {data.clients.map((client, index) => (
                 <tr key={client.clientId} style={{ borderBottom: index < data.clients.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
                   <td style={{ padding: '14px 8px 14px 0', color: '#10253C', fontWeight: 700 }}>{client.clientName}</td>
-                  <td style={{ textAlign: 'center', padding: '14px 8px', color: '#10253C', fontWeight: 700 }}>{formatCurrency(client.monthlyPrice)}</td>
+                  <td style={{ textAlign: 'center', padding: '14px 8px' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: client.expectedAmount > 0 ? '#10253C' : '#9FBDD9', fontWeight: 700 }}>
+                        {formatCurrency(client.expectedAmount)}
+                      </span>
+                      {client.paymentStatus !== 'PAID' && (
+                        <button
+                          type="button"
+                          onClick={() => openExpectedModal(client)}
+                          style={{
+                            background: 'none',
+                            border: '1px solid #9FBDD9',
+                            borderRadius: 6,
+                            width: 26,
+                            height: 26,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            fontSize: 13,
+                            color: '#5682B1',
+                            flexShrink: 0,
+                          }}
+                          title={t('finance.editExpected')}
+                        >
+                          &#9998;
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td style={{ textAlign: 'center', padding: '14px 8px' }}><PayBadge status={client.paymentStatus} /></td>
                   <td style={{ textAlign: 'right', padding: '14px 0' }}>
                     <button
@@ -963,8 +1052,56 @@ export default function FinancePage() {
       >
         <div style={{ display: 'flex', flexDirection: isTablet ? 'column' : 'row', justifyContent: 'space-between', gap: 16 }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#C8DBED', marginBottom: 6 }}>
-              {monthName} {now.getFullYear()}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <button
+                type="button"
+                onClick={goToPrevMonth}
+                style={{
+                  background: 'rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  borderRadius: 8,
+                  width: 30,
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#FFFFFF',
+                  fontSize: 16,
+                  transition: 'background 0.2s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.25)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; }}
+              >
+                &#8249;
+              </button>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#C8DBED', minWidth: 0 }}>
+                {monthName} {viewYear}
+              </span>
+              <button
+                type="button"
+                onClick={goToNextMonth}
+                disabled={isCurrentMonth}
+                style={{
+                  background: isCurrentMonth ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  borderRadius: 8,
+                  width: 30,
+                  height: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: isCurrentMonth ? 'not-allowed' : 'pointer',
+                  color: '#FFFFFF',
+                  fontSize: 16,
+                  opacity: isCurrentMonth ? 0.35 : 1,
+                  transition: 'background 0.2s, opacity 0.2s',
+                }}
+                onMouseEnter={(e) => { if (!isCurrentMonth) e.currentTarget.style.background = 'rgba(255,255,255,0.25)'; }}
+                onMouseLeave={(e) => { if (!isCurrentMonth) e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; }}
+              >
+                &#8250;
+              </button>
             </div>
             <h1 style={{ margin: 0, fontSize: isMobile ? 21 : 34, lineHeight: 1.06, fontWeight: 800 }}>{t('finance.title')}</h1>
             <p style={{ margin: '8px 0 0', maxWidth: 680, fontSize: isMobile ? 13 : 16, lineHeight: 1.45, color: '#E4EFF9' }}>
@@ -1119,6 +1256,149 @@ export default function FinancePage() {
                   style={{ padding: '10px 22px', background: savingExpense ? '#739EC9' : 'linear-gradient(135deg, #5682B1 0%, #739EC9 100%)', color: '#FFFFFF', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: savingExpense ? 'not-allowed' : 'pointer', width: isMobile ? '100%' : 'auto' }}
                 >
                   {savingExpense ? t('finance.expenses.modal.saving') : editingExpense ? t('finance.expenses.modal.update') : t('finance.expenses.modal.create')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showExpectedModal && editingExpectedClient && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: isMobile ? '16px 16px 0 0' : 20,
+              padding: isMobile ? '22px 16px 18px' : '28px 32px',
+              width: '100%',
+              maxWidth: isMobile ? '100%' : 440,
+              boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: '#000000', margin: 0 }}>{t('finance.expectedModal.title')}</h2>
+                <p style={{ fontSize: 13, color: '#6B86A3', marginTop: 4, marginBottom: 0 }}>
+                  {editingExpectedClient.clientName} — {monthName} {viewYear}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExpectedModal(false)}
+                style={{ background: '#FFFFFF', border: 'none', width: 32, height: 32, borderRadius: 8, fontSize: 18, color: '#5682B1', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >
+                x
+              </button>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6B86A3', letterSpacing: '0.08em', marginBottom: 8, textTransform: 'uppercase' }}>
+                {t('finance.expectedModal.quickOptions')}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {editingExpectedClient.previousMonthAmount != null && editingExpectedClient.previousMonthAmount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSaveExpected(editingExpectedClient.previousMonthAmount)}
+                    disabled={savingExpected}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '12px 14px',
+                      border: '1px solid rgba(159,189,217,0.4)',
+                      borderRadius: 12,
+                      background: '#F7FBFF',
+                      cursor: savingExpected ? 'not-allowed' : 'pointer',
+                      fontSize: 13,
+                      color: '#10253C',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span>{t('finance.expectedModal.previousMonth')}</span>
+                    <strong>{formatCurrency(editingExpectedClient.previousMonthAmount)}</strong>
+                  </button>
+                )}
+                {editingExpectedClient.packagePrice != null && editingExpectedClient.packagePrice > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSaveExpected(editingExpectedClient.packagePrice)}
+                    disabled={savingExpected}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '12px 14px',
+                      border: '1px solid rgba(159,189,217,0.4)',
+                      borderRadius: 12,
+                      background: '#F7FBFF',
+                      cursor: savingExpected ? 'not-allowed' : 'pointer',
+                      fontSize: 13,
+                      color: '#10253C',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span>{t('finance.expectedModal.package', { name: editingExpectedClient.packageName })}</span>
+                    <strong>{formatCurrency(editingExpectedClient.packagePrice)}</strong>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const val = parseFloat(expectedAmountInput);
+                if (!Number.isNaN(val) && val >= 0) onSaveExpected(val);
+              }}
+            >
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>{t('finance.expectedModal.customAmount')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={expectedAmountInput}
+                  onChange={(e) => setExpectedAmountInput(e.target.value)}
+                  placeholder="0"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isMobile ? 'column-reverse' : 'row' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowExpectedModal(false)}
+                  style={{ padding: '10px 18px', border: '1.5px solid #739EC9', borderRadius: 10, background: 'none', fontSize: 13, fontWeight: 500, color: '#5682B1', cursor: 'pointer', width: isMobile ? '100%' : 'auto' }}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingExpected || expectedAmountInput === ''}
+                  style={{
+                    padding: '10px 22px',
+                    background: savingExpected || expectedAmountInput === '' ? '#739EC9' : 'linear-gradient(135deg, #5682B1 0%, #739EC9 100%)',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 10,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: savingExpected || expectedAmountInput === '' ? 'not-allowed' : 'pointer',
+                    width: isMobile ? '100%' : 'auto',
+                  }}
+                >
+                  {savingExpected ? t('finance.expectedModal.saving') : t('finance.expectedModal.save')}
                 </button>
               </div>
             </form>

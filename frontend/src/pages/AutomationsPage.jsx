@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import useMediaQuery from '../hooks/useMediaQuery';
 import { useAppFeedback } from '../components/ui/FeedbackProvider';
 import { automationsApi, clientsApi } from '../services/api';
@@ -71,7 +72,7 @@ function ResultsModal({ results, onClose }) {
           <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #EEF3F8' }}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{result.clientName}</div>
-              <div style={{ fontSize: 11, color: '#5682B1' }}>{result.phone || '—'}</div>
+              <div style={{ fontSize: 11, color: '#5682B1' }}>{result.email || '—'}</div>
               {result.error && <div style={{ fontSize: 11, color: '#C53131', marginTop: 2 }}>{result.error}</div>}
             </div>
             <span
@@ -106,17 +107,64 @@ function buildDefaultMessageTemplate(t, type, isFollowUp = false) {
   return t(isFollowUp ? 'automations.templates.checkInFollowUp' : 'automations.templates.checkIn');
 }
 
+function buildDefaultSubject(t, type) {
+  if (type === 'FEEDBACK') return t('automations.defaultSubjects.feedback');
+  if (type === 'MESSAGE_ONLY') return t('automations.defaultSubjects.messageOnly');
+  return t('automations.defaultSubjects.checkIn');
+}
+
 function normalizeTemplateLanguage(language) {
   return ['pt', 'en', 'de'].includes(language) ? language : 'en';
+}
+
+function GmailBanner({ gmailStatus, onConnect, onDisconnect }) {
+  const { t } = useTranslation();
+  const [connecting, setConnecting] = useState(false);
+
+  async function handleConnect() {
+    setConnecting(true);
+    try {
+      await onConnect();
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  if (gmailStatus?.connected) {
+    return (
+      <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', marginBottom: 14, background: '#EAF8EF', border: '1px solid #9FD7B1' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1F6A3A' }}>{t('automations.gmail.connected')}</div>
+          <div style={{ fontSize: 12, color: '#2D7A47', marginTop: 2 }}>{gmailStatus.email}</div>
+        </div>
+        <button type="button" style={{ ...btn('secondary'), fontSize: 11, padding: '6px 14px' }} onClick={onDisconnect}>
+          {t('automations.gmail.disconnect')}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', marginBottom: 14, background: '#FFF8E1', border: '1px solid #F3D690' }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#8A5A00' }}>{t('automations.gmail.notConnected')}</div>
+        <div style={{ fontSize: 12, color: '#B45309', marginTop: 2 }}>{t('automations.gmail.notConnectedHint')}</div>
+      </div>
+      <button type="button" style={{ ...btn('primary'), fontSize: 12, padding: '8px 18px' }} onClick={handleConnect} disabled={connecting}>
+        {connecting ? t('automations.gmail.connecting') : t('automations.gmail.connect')}
+      </button>
+    </div>
+  );
 }
 
 function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }) {
   const { t, i18n } = useTranslation();
   const { showError } = useAppFeedback();
+  const fileInputRef = useRef(null);
   const isEditing = !!automation;
   const followUpParent = parentAutomation || null;
   const isFollowUp = !!(automation?.parentAutomationId || followUpParent?.id);
-  const initialType = automation?.type || followUpParent?.type || 'CHECK_IN';
+  const initialType = automation?.type || followUpParent?.type || 'MESSAGE_ONLY';
   const [templateLanguage, setTemplateLanguage] = useState(normalizeTemplateLanguage(i18n.language));
   const templateT = i18n.getFixedT(templateLanguage);
   const initialDefaultTemplate = buildDefaultMessageTemplate(templateT, initialType, isFollowUp);
@@ -124,20 +172,24 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
     name: automation?.name || '',
     type: initialType,
     sendMode: automation?.sendMode || (isFollowUp ? 'SCHEDULED' : 'IMMEDIATE'),
-    delayDays: automation?.delayDays || (isFollowUp ? 2 : 21),
+    scheduledAt: automation?.scheduledAt ? automation.scheduledAt.slice(0, 16) : '',
     messageTemplate: automation?.messageTemplate || initialDefaultTemplate,
+    subject: automation?.subject || buildDefaultSubject(templateT, initialType),
   });
   const [selectedIds, setSelectedIds] = useState(automation?.clientIds || followUpParent?.clientIds || []);
+  const [attachments, setAttachments] = useState(automation?.attachments || []);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [lastDefaultTemplate, setLastDefaultTemplate] = useState(initialDefaultTemplate);
 
-  const clientsWithPhone = clients.filter((c) => c.phone);
+  const clientsWithEmail = clients.filter((c) => c.email);
 
   function setType(nextType) {
     const nextDefault = buildDefaultMessageTemplate(templateT, nextType, isFollowUp);
     setForm((prev) => ({
       ...prev,
       type: nextType,
+      subject: buildDefaultSubject(templateT, nextType),
       messageTemplate: !prev.messageTemplate || prev.messageTemplate === lastDefaultTemplate ? nextDefault : prev.messageTemplate,
     }));
     setLastDefaultTemplate(nextDefault);
@@ -157,8 +209,29 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
   }
 
   function toggleAll() {
-    if (selectedIds.length === clientsWithPhone.length) setSelectedIds([]);
-    else setSelectedIds(clientsWithPhone.map((client) => client.id));
+    if (selectedIds.length === clientsWithEmail.length) setSelectedIds([]);
+    else setSelectedIds(clientsWithEmail.map((client) => client.id));
+  }
+
+  async function handleFileUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await automationsApi.uploadAttachment(formData);
+      setAttachments((prev) => [...prev, response.data]);
+    } catch {
+      showError(t('automations.modal.uploadError'));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function removeAttachment(index) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSubmit(event) {
@@ -174,9 +247,11 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
         name: form.name,
         type: form.type,
         sendMode: form.sendMode,
-        delayDays: form.sendMode === 'SCHEDULED' ? Number(form.delayDays) : undefined,
+        scheduledAt: form.sendMode === 'SCHEDULED' && form.scheduledAt ? new Date(form.scheduledAt).toISOString() : undefined,
         clientIds: selectedIds,
         messageTemplate: form.messageTemplate,
+        subject: form.subject,
+        attachments,
         parentAutomationId: automation?.parentAutomationId || followUpParent?.id || undefined,
       };
       const response = isEditing ? await automationsApi.update(automation.id, payload) : await automationsApi.create(payload);
@@ -188,8 +263,6 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
     }
   }
 
-  const delayDaysNum = Number(form.delayDays) || 0;
-
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}>
       <div style={{ ...card, maxWidth: 560, width: '92%', maxHeight: '88vh', overflow: 'auto' }} onClick={(event) => event.stopPropagation()}>
@@ -197,7 +270,9 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
           {t(isEditing ? 'automations.modal.editTitle' : isFollowUp ? 'automations.modal.followUpTitle' : 'automations.modal.title')}
         </h3>
         <p style={{ margin: '0 0 20px', fontSize: 13, color: '#5682B1' }}>
-          {t(isFollowUp ? 'automations.modal.followUpSubtitle' : 'automations.modal.subtitle')}
+          {t(isFollowUp
+            ? (followUpParent && !followUpParent.sentAt ? 'automations.modal.followUpPendingSubtitle' : 'automations.modal.followUpSubtitle')
+            : 'automations.modal.subtitle')}
         </p>
 
         {isFollowUp && followUpParent ? (
@@ -206,7 +281,9 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
             <div>{followUpParent.name}</div>
             {followUpParent.sentAt ? (
               <div style={{ color: '#5682B1', marginTop: 4 }}>{t('automations.modal.parentAutomationSentAt', { date: new Date(followUpParent.sentAt).toLocaleString() })}</div>
-            ) : null}
+            ) : (
+              <div style={{ color: '#B45309', marginTop: 4 }}>{t('automations.modal.parentAutomationPending', { date: followUpParent.scheduledAt ? new Date(followUpParent.scheduledAt).toLocaleString() : '' })}</div>
+            )}
           </div>
         ) : null}
 
@@ -214,36 +291,6 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
           <div style={{ marginBottom: 16 }}>
             <span style={label}>{t('automations.modal.name')}</span>
             <input style={input} required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder={t('automations.modal.namePlaceholder')} />
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <span style={label}>{t('automations.modal.type')}</span>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {['CHECK_IN', 'FEEDBACK', 'MESSAGE_ONLY'].map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={isFollowUp}
-                  style={{
-                    flex: 1,
-                    padding: '9px 12px',
-                    borderRadius: 9,
-                    border: '1.5px solid',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all .15s',
-                    borderColor: form.type === value ? '#2C4F73' : '#C0D8EE',
-                    background: form.type === value ? 'linear-gradient(135deg,#10253C,#2C4F73)' : '#FBFDFF',
-                    color: form.type === value ? '#FFFFFF' : '#10253C',
-                    opacity: isFollowUp && form.type !== value ? 0.6 : 1,
-                  }}
-                  onClick={() => setType(value)}
-                >
-                  {t(`automations.type.${value}`)}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div style={{ marginBottom: 16 }}>
@@ -276,13 +323,18 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
 
           {form.sendMode === 'SCHEDULED' && (
             <div style={{ marginBottom: 16 }}>
-              <span style={label}>{t('automations.modal.delayDays')}</span>
-              <input type="number" min={1} style={input} required value={form.delayDays} onChange={(event) => setForm({ ...form, delayDays: event.target.value })} />
+              <span style={label}>{t('automations.modal.scheduleDate')}</span>
+              <input type="datetime-local" style={input} required value={form.scheduledAt} onChange={(event) => setForm({ ...form, scheduledAt: event.target.value })} />
               <p style={{ margin: '5px 0 0', fontSize: 11.5, color: '#5682B1' }}>
-                {t(isFollowUp ? 'automations.modal.followUpDelayDaysHint' : 'automations.modal.delayDaysHint', { days: delayDaysNum })}
+                {t('automations.modal.scheduleDateHint')}
               </p>
             </div>
           )}
+
+          <div style={{ marginBottom: 16 }}>
+            <span style={label}>{t('automations.modal.subject')}</span>
+            <input style={input} required value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} placeholder={t('automations.modal.subjectPlaceholder')} />
+          </div>
 
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
@@ -315,21 +367,46 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
             </p>
           </div>
 
+          <div style={{ marginBottom: 16 }}>
+            <span style={label}>{t('automations.modal.attachments')}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {attachments.map((att, index) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: '#F7FBFF', border: '1px solid #DCE9F5' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#10253C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                    {att.originalName || att.filename}
+                  </div>
+                  <button type="button" onClick={() => removeAttachment(index)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C53131', fontSize: 14, padding: '2px 6px', fontWeight: 700 }}>
+                    x
+                  </button>
+                </div>
+              ))}
+              <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileUpload} />
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+                style={{ ...btn('secondary'), fontSize: 12, textAlign: 'center' }}
+              >
+                {uploading ? t('automations.modal.uploading') : t('automations.modal.addAttachment')}
+              </button>
+            </div>
+          </div>
+
           <div style={{ marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={label}>{t('automations.modal.clients')}</span>
               <button type="button" onClick={toggleAll} style={{ fontSize: 11, fontWeight: 600, color: '#2C4F73', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                {selectedIds.length === clientsWithPhone.length ? t('automations.modal.deselectAll') : t('automations.modal.selectAll')}
+                {selectedIds.length === clientsWithEmail.length ? t('automations.modal.deselectAll') : t('automations.modal.selectAll')}
               </button>
             </div>
 
-            {clientsWithPhone.length === 0 ? (
+            {clientsWithEmail.length === 0 ? (
               <p style={{ fontSize: 13, color: '#B45309', background: '#FFF8E1', padding: '10px 14px', borderRadius: 9 }}>
                 {t('automations.modal.noClientsHint')}
               </p>
             ) : (
               <div style={{ maxHeight: 200, overflow: 'auto', border: '1.5px solid #C0D8EE', borderRadius: 9 }}>
-                {clientsWithPhone.map((client) => {
+                {clientsWithEmail.map((client) => {
                   const checked = selectedIds.includes(client.id);
                   return (
                     <label
@@ -347,7 +424,7 @@ function CreateModal({ clients, automation, parentAutomation, onClose, onSaved }
                       <input type="checkbox" checked={checked} onChange={() => toggleClient(client.id)} style={{ accentColor: '#2C4F73', width: 15, height: 15 }} />
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#11253E' }}>{client.name}</div>
-                        <div style={{ fontSize: 11, color: '#5682B1' }}>{client.phone}</div>
+                        <div style={{ fontSize: 11, color: '#5682B1' }}>{client.email}</div>
                       </div>
                     </label>
                   );
@@ -403,6 +480,7 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
   const results = automation.results || [];
   const isFollowUp = !!automation.parentAutomationId;
   const formLabel = automation.type === 'FEEDBACK' ? t('automations.type.FEEDBACK') : automation.type === 'MESSAGE_ONLY' ? t('automations.type.MESSAGE_ONLY') : t('automations.type.CHECK_IN');
+  const attachmentCount = Array.isArray(automation.attachments) ? automation.attachments.length : 0;
 
   return (
     <>
@@ -439,7 +517,7 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
             <span>{t('automations.status.' + automation.status, automation.status)}</span>
           </div>
 
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 10, background: '#FFF8E1', border: '1px solid #F3D690', color: '#8A5A00', fontSize: 11, fontWeight: 800 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 10, background: '#EDF4FF', border: '1px solid #B8D4F0', color: '#1F4B72', fontSize: 11, fontWeight: 800 }}>
             {automation.type === 'MESSAGE_ONLY' ? (
               <span>{t('automations.type.MESSAGE_ONLY')}</span>
             ) : (
@@ -466,6 +544,7 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
 
             <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 4 }}>
               {t('automations.clients', { count: (automation.clientIds || []).length })}
+              {attachmentCount > 0 && ` · ${t('automations.attachmentCount', { count: attachmentCount })}`}
               {' · '}
               {automation.status === 'SENT' && automation.sentAt
                 ? t('automations.sentAt', { date: formatDate(automation.sentAt) })
@@ -473,6 +552,12 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
                   ? t('automations.scheduledFor', { date: formatDate(automation.scheduledAt) })
                   : t(`automations.sendMode.${automation.sendMode}`)}
             </div>
+
+            {automation.subject && (
+              <div style={{ fontSize: 12, color: '#5682B1', marginTop: 2 }}>
+                {t('automations.subjectLabel')}: {automation.subject}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -534,7 +619,7 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
           </div>
         )}
 
-        {expanded && automation.status === 'SENT' && !automation.parentAutomationId && (
+        {expanded && (automation.status === 'SENT' || automation.status === 'PENDING') && !automation.parentAutomationId && (
           <button type="button" style={{ ...btn('secondary'), fontSize: 12 }} onClick={() => onCreateFollowUp(automation)}>
             {t('automations.createFollowUp')}
           </button>
@@ -543,6 +628,212 @@ function AutomationCard({ automation, parentAutomation, onDeleted, onExecuted, o
 
       {showResults && results.length > 0 && <ResultsModal results={results} onClose={() => setShowResults(false)} />}
     </>
+  );
+}
+
+function WelcomeEmailConfigCard({ config, onEdit, onDelete }) {
+  const { t } = useTranslation();
+  const { confirm, showError } = useAppFeedback();
+  const [expanded, setExpanded] = useState(false);
+  const attachmentCount = Array.isArray(config?.attachments) ? config.attachments.length : 0;
+
+  async function handleDelete() {
+    if (!(await confirm(t('automations.welcomeEmail.deleteConfirm')))) return;
+    try {
+      await automationsApi.delete(config.id);
+      onDelete(config.id);
+    } catch {
+      showError(t('automations.deleteError'));
+    }
+  }
+
+  if (!config) {
+    return (
+      <div style={{ ...card, padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, background: '#F7FBFF', border: '1px solid #DCE9F5' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#10253C' }}>{t('automations.welcomeEmail.title')}</div>
+          <div style={{ fontSize: 12, color: '#5682B1', marginTop: 4 }}>{t('automations.welcomeEmail.notConfigured')}</div>
+        </div>
+        <button type="button" style={{ ...btn('primary'), fontSize: 12 }} onClick={() => onEdit(null)}>
+          {t('automations.welcomeEmail.configure')}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...card, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12, background: 'linear-gradient(180deg, #F0FFF4 0%, #FCFEFF 100%)', border: '1px solid #9FD7B1' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: '#DDF4E6', color: '#1F6A3A', border: '1px solid #9FD7B1' }}>
+          {t('automations.welcomeEmail.title')}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={() => setExpanded((p) => !p)} style={{ ...btn('secondary'), fontSize: 11, padding: '7px 10px', borderRadius: 8 }}>
+            {expanded ? t('automations.hideDetails') : t('automations.viewDetails')}
+          </button>
+          <button type="button" onClick={handleDelete} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C53131', fontSize: 16, padding: '2px 4px', fontWeight: 700 }}>
+            x
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: '#11253E' }}>{config.name}</div>
+        <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 4 }}>
+          {t('automations.welcomeEmail.activeHint')}
+          {attachmentCount > 0 && ` · ${t('automations.attachmentCount', { count: attachmentCount })}`}
+        </div>
+        {config.subject && (
+          <div style={{ fontSize: 12, color: '#5682B1', marginTop: 2 }}>
+            {t('automations.subjectLabel')}: {config.subject}
+          </div>
+        )}
+      </div>
+
+      {expanded && config.messageTemplate && (
+        <div style={{ fontSize: 12, color: '#10253C', background: '#F7FBFF', border: '1px solid #DCE9F5', borderRadius: 10, padding: '10px 12px', whiteSpace: 'pre-wrap' }}>
+          {config.messageTemplate}
+        </div>
+      )}
+
+      {expanded && (
+        <button type="button" style={{ ...btn('secondary'), fontSize: 12, alignSelf: 'flex-start' }} onClick={() => onEdit(config)}>
+          {t('automations.edit')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function WelcomeEmailConfigModal({ config, onClose, onSaved }) {
+  const { t } = useTranslation();
+  const { showError } = useAppFeedback();
+  const fileInputRef = useRef(null);
+  const isEditing = !!config;
+
+  const defaultTemplate = `Hallo {{name}}\n\nI'm Anhang findest du wie heute besprochen sowohl meine AGBs als auch den Zahlungsschein, über den du den Betrag für die Betreuung begleichen kannst.\n\nNächster Termin (Trainingsplan Abgabe + Geräte-Einweisung): (DATUM)\nBetrag: {{amount}}\nZahlungsfrist: (DATUM)\n\nDanke für dein Vertrauen,\n\nSportliche Grüsse\nDaniel Abreu / Fitness Trainer`;
+
+  const [form, setForm] = useState({
+    name: config?.name || t('automations.welcomeEmail.defaultName'),
+    subject: config?.subject || 'Daniel Abreu PT — Willkommen',
+    messageTemplate: config?.messageTemplate || defaultTemplate,
+  });
+  const [attachments, setAttachments] = useState(config?.attachments || []);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleFileUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await automationsApi.uploadAttachment(formData);
+      setAttachments((prev) => [...prev, response.data]);
+    } catch {
+      showError(t('automations.modal.uploadError'));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function removeAttachment(index) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name,
+        type: 'CLIENT_WELCOME_EMAIL',
+        sendMode: 'IMMEDIATE',
+        messageTemplate: form.messageTemplate,
+        subject: form.subject,
+        attachments,
+        clientIds: [],
+      };
+      const response = isEditing
+        ? await automationsApi.update(config.id, payload)
+        : await automationsApi.create(payload);
+      onSaved(response.data);
+    } catch {
+      showError(t(isEditing ? 'automations.updateError' : 'automations.createError'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}>
+      <div style={{ ...card, maxWidth: 560, width: '92%', maxHeight: '88vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>
+          {t(isEditing ? 'automations.welcomeEmail.editTitle' : 'automations.welcomeEmail.createTitle')}
+        </h3>
+        <p style={{ margin: '0 0 20px', fontSize: 13, color: '#5682B1' }}>
+          {t('automations.welcomeEmail.configSubtitle')}
+        </p>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 16 }}>
+            <span style={label}>{t('automations.modal.name')}</span>
+            <input style={input} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <span style={label}>{t('automations.modal.subject')}</span>
+            <input style={input} required value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+              <span style={label}>{t('automations.welcomeEmail.template')}</span>
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, messageTemplate: defaultTemplate }))}
+                style={{ fontSize: 11, fontWeight: 600, color: '#2C4F73', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                {t('automations.modal.resetMessage')}
+              </button>
+            </div>
+            <textarea style={textarea} required value={form.messageTemplate} onChange={(e) => setForm({ ...form, messageTemplate: e.target.value })} />
+            <p style={{ margin: '5px 0 0', fontSize: 11.5, color: '#5682B1' }}>
+              {t('automations.welcomeEmail.templateHint')}
+            </p>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <span style={label}>{t('automations.welcomeEmail.defaultAttachments')}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {attachments.map((att, index) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: '#F7FBFF', border: '1px solid #DCE9F5' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#10253C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                    {att.originalName || att.filename}
+                  </div>
+                  <button type="button" onClick={() => removeAttachment(index)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C53131', fontSize: 14, padding: '2px 6px', fontWeight: 700 }}>
+                    x
+                  </button>
+                </div>
+              ))}
+              <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileUpload} />
+              <button type="button" disabled={uploading} onClick={() => fileInputRef.current?.click()} style={{ ...btn('secondary'), fontSize: 12, textAlign: 'center' }}>
+                {uploading ? t('automations.modal.uploading') : t('automations.modal.addAttachment')}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" style={{ ...btn('secondary'), flex: 1 }} onClick={onClose}>{t('automations.modal.cancel')}</button>
+            <button type="submit" style={{ ...btn('primary'), flex: 2 }} disabled={saving}>
+              {saving ? t('automations.modal.saving') : t(isEditing ? 'automations.modal.save' : 'automations.welcomeEmail.configure')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -561,7 +852,7 @@ function StatCard({ label, value, detail, accent }) {
 
 export default function AutomationsPage() {
   const { t } = useTranslation();
-  const { showError } = useAppFeedback();
+  const { showError, showSuccess } = useAppFeedback();
   const isMobile = useMediaQuery('(max-width: 760px)');
   const isTablet = useMediaQuery('(max-width: 1100px)');
   const [automations, setAutomations] = useState([]);
@@ -570,13 +861,26 @@ export default function AutomationsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState(null);
   const [parentAutomation, setParentAutomation] = useState(null);
+  const [gmailStatus, setGmailStatus] = useState(null);
+  const [welcomeConfig, setWelcomeConfig] = useState(null);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [editingWelcomeConfig, setEditingWelcomeConfig] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [automationsResponse, clientsResponse] = await Promise.all([automationsApi.list(), clientsApi.list()]);
-      setAutomations(automationsResponse.data || []);
-      setClients(clientsResponse.data || []);
+      const [automationsResponse, clientsResponse, gmailResponse, welcomeResponse] = await Promise.all([
+        automationsApi.list(),
+        clientsApi.list(),
+        automationsApi.gmailStatus(),
+        automationsApi.getWelcomeConfig(),
+      ]);
+      const allAutomations = automationsResponse.data || [];
+      setAutomations(allAutomations.filter((a) => a.type !== 'CLIENT_WELCOME_EMAIL'));
+      setClients((clientsResponse.data || []).map((c) => ({ ...c, email: c.email || c.user?.email || '' })));
+      setGmailStatus(gmailResponse.data || null);
+      setWelcomeConfig(welcomeResponse.data || null);
     } catch {
       showError('Erro ao carregar automações.');
     } finally {
@@ -587,6 +891,39 @@ export default function AutomationsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const code = searchParams.get('code');
+    if (code) {
+      setSearchParams({}, { replace: true });
+      automationsApi.gmailCallback(code)
+        .then((res) => {
+          setGmailStatus({ connected: true, email: res.data.email });
+          showSuccess(t('automations.gmail.connectSuccess'));
+        })
+        .catch(() => {
+          showError(t('automations.gmail.connectError'));
+        });
+    }
+  }, []);
+
+  async function handleGmailConnect() {
+    try {
+      const response = await automationsApi.gmailAuthUrl();
+      window.location.href = response.data.url;
+    } catch {
+      showError(t('automations.gmail.connectError'));
+    }
+  }
+
+  async function handleGmailDisconnect() {
+    try {
+      await automationsApi.gmailDisconnect();
+      setGmailStatus({ connected: false, email: null });
+    } catch {
+      showError(t('automations.gmail.disconnectError'));
+    }
+  }
 
   function handleDeleted(id) {
     setAutomations((prev) => prev.filter((automation) => automation.id !== id));
@@ -676,6 +1013,21 @@ export default function AutomationsPage() {
           </button>
         </div>
       </section>
+
+      <GmailBanner gmailStatus={gmailStatus} onConnect={handleGmailConnect} onDisconnect={handleGmailDisconnect} />
+
+      <div style={{ marginBottom: 14 }}>
+        <WelcomeEmailConfigCard
+          config={welcomeConfig}
+          onEdit={(cfg) => {
+            setEditingWelcomeConfig(cfg);
+            setShowWelcomeModal(true);
+          }}
+          onDelete={() => {
+            setWelcomeConfig(null);
+          }}
+        />
+      </div>
 
       <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 14, marginBottom: 18 }}>
         <StatCard label={t('automations.total')} value={summary.total} detail={t('automations.totalHint')} accent="#10253C" />
@@ -781,6 +1133,21 @@ export default function AutomationsPage() {
             setParentAutomation(null);
           }}
           onSaved={handleSaved}
+        />
+      )}
+
+      {showWelcomeModal && (
+        <WelcomeEmailConfigModal
+          config={editingWelcomeConfig}
+          onClose={() => {
+            setShowWelcomeModal(false);
+            setEditingWelcomeConfig(null);
+          }}
+          onSaved={(data) => {
+            setWelcomeConfig(data?.automation || null);
+            setShowWelcomeModal(false);
+            setEditingWelcomeConfig(null);
+          }}
         />
       )}
     </div>

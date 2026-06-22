@@ -7,6 +7,7 @@ import {
 	getFinanceOverview,
 	getFinanceStats,
 	listExpenses,
+	updateExpectedAmount,
 	updateExpense,
 	updatePaymentStatus,
 } from '../controllers/finance.controller.js';
@@ -21,6 +22,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 
 router.get('/overview', getFinanceOverview);
 router.get('/stats', getFinanceStats);
 router.patch('/payments/:clientId', updatePaymentStatus);
+router.patch('/payments/:clientId/expected', updateExpectedAmount);
 router.get('/expenses', listExpenses);
 router.get('/expenses/:id/attachment/download', downloadExpenseAttachment);
 router.post('/expenses', upload.single('attachment'), createExpense);

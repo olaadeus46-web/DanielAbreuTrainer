@@ -178,30 +178,58 @@ export const getFinanceOverview = async (req, res, next) => {
     const trainer = await getTrainerByUserId(req.userId);
 
     const now = new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
+    const month = req.query.month ? Number(req.query.month) : now.getMonth() + 1;
+    const year = req.query.year ? Number(req.query.year) : now.getFullYear();
+
+    let prevMonth = month - 1;
+    let prevYear = year;
+    if (prevMonth === 0) { prevMonth = 12; prevYear = year - 1; }
 
     const clients = await prisma.client.findMany({
       where: { trainerId: trainer.id },
-      include: { payments: { where: { month, year } } },
+      include: { payments: { where: { month, year } }, package: true },
     });
 
-    const summary = clients.map((c) => ({
-      clientId: c.id,
-      clientName: c.name,
-      monthlyPrice: c.monthlyPrice,
-      paymentStatus: c.payments[0]?.status ?? 'PENDING',
-      paidAt: c.payments[0]?.paidAt ?? null,
-    }));
+    const clientIds = clients.map((c) => c.id);
+    const prevPayments = clientIds.length
+      ? await prisma.payment.findMany({
+          where: { clientId: { in: clientIds }, month: prevMonth, year: prevYear },
+        })
+      : [];
+    const prevPaymentMap = new Map(prevPayments.map((p) => [p.clientId, p]));
 
-    const totalExpected = clients.reduce((sum, c) => sum + c.monthlyPrice, 0);
-    const totalReceived = clients
-      .filter((c) => c.payments[0]?.status === 'PAID')
-      .reduce((sum, c) => sum + c.monthlyPrice, 0);
+    const allSummary = clients.map((c) => {
+      const payment = c.payments[0];
+      const expectedAmount = payment ? Number(payment.amount || 0) : 0;
+      const prev = prevPaymentMap.get(c.id);
+      const paymentStatus = payment?.status ?? 'PENDING';
+
+      return {
+        clientId: c.id,
+        clientName: c.name,
+        expectedAmount,
+        monthlyPrice: expectedAmount,
+        paymentStatus,
+        paidAt: payment?.paidAt ?? null,
+        packageName: c.package?.name || null,
+        packagePrice: c.package ? Number(c.package.monthlyPrice || 0) : null,
+        previousMonthAmount: prev ? Number(prev.amount || 0) : null,
+        isAbsent: c.isAbsent || false,
+      };
+    });
+
+    const summary = allSummary.filter(
+      (c) => !c.isAbsent || c.paymentStatus === 'PAID'
+    );
+
+    const totalExpected = summary.reduce((sum, c) => sum + c.expectedAmount, 0);
+    const totalReceived = summary
+      .filter((c) => c.paymentStatus === 'PAID')
+      .reduce((sum, c) => sum + c.expectedAmount, 0);
 
     res.json({
       month, year,
-      totalClients: clients.length,
+      totalClients: summary.length,
       totalExpected,
       totalReceived,
       totalPending: totalExpected - totalReceived,
@@ -225,7 +253,7 @@ export const updatePaymentStatus = async (req, res, next) => {
       where: { clientId_month_year: { clientId, month, year } },
       create: {
         clientId, month, year,
-        amount: client.monthlyPrice,
+        amount: 0,
         status,
         paidAt: status === 'PAID' ? new Date() : null,
       },
@@ -233,6 +261,40 @@ export const updatePaymentStatus = async (req, res, next) => {
         status,
         paidAt: status === 'PAID' ? new Date() : null,
       },
+    });
+    res.json(payment);
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/finance/payments/:clientId/expected
+export const updateExpectedAmount = async (req, res, next) => {
+  try {
+    const trainer = await getTrainerByUserId(req.userId);
+    const { clientId } = req.params;
+    const { month, year, amount } = req.body;
+
+    const client = await prisma.client.findFirst({ where: { id: clientId, trainerId: trainer.id } });
+    if (!client) throw new AppError('Cliente não encontrado.', 404);
+
+    const parsedAmount = Number(amount);
+    if (Number.isNaN(parsedAmount) || parsedAmount < 0) {
+      throw new AppError('Valor inválido.', 400);
+    }
+
+    const existing = await prisma.payment.findFirst({ where: { clientId, month, year } });
+    if (existing?.status === 'PAID') {
+      throw new AppError('Não é possível alterar o valor de um pagamento já efetuado.', 400);
+    }
+
+    const payment = await prisma.payment.upsert({
+      where: { clientId_month_year: { clientId, month, year } },
+      create: {
+        clientId, month, year,
+        amount: parsedAmount,
+        status: 'PENDING',
+        paidAt: null,
+      },
+      update: { amount: parsedAmount },
     });
     res.json(payment);
   } catch (err) { next(err); }
@@ -280,16 +342,14 @@ export const getFinanceStats = async (req, res, next) => {
       },
     });
 
-    const totals = clients.reduce((acc, client) => {
-      const price = Number(client.monthlyPrice || 0);
-      return {
-        expectedMonthly: acc.expectedMonthly + price,
-      };
-    }, { expectedMonthly: 0 });
-
     const monthlySeries = buckets.map((bucket) => {
-      const received = payments
-        .filter((payment) => payment.month === bucket.month && payment.year === bucket.year && payment.status === 'PAID')
+      const monthPayments = payments.filter(
+        (payment) => payment.month === bucket.month && payment.year === bucket.year
+      );
+
+      const expected = monthPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const received = monthPayments
+        .filter((payment) => payment.status === 'PAID')
         .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
       const totalExpenses = expenses
@@ -299,7 +359,6 @@ export const getFinanceStats = async (req, res, next) => {
         })
         .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
-      const expected = totals.expectedMonthly;
       const pending = Math.max(expected - received, 0);
       const collectionRate = expected > 0 ? (received / expected) * 100 : 0;
       const net = received - totalExpenses;
@@ -348,7 +407,15 @@ export const getFinanceStats = async (req, res, next) => {
       expenseByTypeMap.set(type, (expenseByTypeMap.get(type) || 0) + Number(expense.amount || 0));
     }
 
-    const statusBreakdown = clients.reduce((acc, client) => {
+    const activeClients = clients.filter((client) => {
+      if (!client.isAbsent) return true;
+      const pmt = payments.find(
+        (p) => p.clientId === client.id && p.month === currentMonth && p.year === currentYear
+      );
+      return pmt?.status === 'PAID';
+    });
+
+    const statusBreakdown = activeClients.reduce((acc, client) => {
       const currentPayment = payments.find(
         (payment) => payment.clientId === client.id && payment.month === currentMonth && payment.year === currentYear
       );
@@ -358,7 +425,7 @@ export const getFinanceStats = async (req, res, next) => {
     }, { PAID: 0, PENDING: 0, OVERDUE: 0 });
 
     const packageMap = new Map();
-    for (const client of clients) {
+    for (const client of activeClients) {
       const packageName = client.package?.name || null;
       const packageKey = packageName || '__NO_PACKAGE__';
       const current = packageMap.get(packageKey) || { name: packageName, clients: 0, revenue: 0 };
@@ -387,8 +454,8 @@ export const getFinanceStats = async (req, res, next) => {
         byType: Array.from(expenseByTypeMap.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
       },
       totals: {
-        totalClients: clients.length,
-        clientsWithPackage: clients.filter((client) => Boolean(client.packageId)).length,
+        totalClients: activeClients.length,
+        clientsWithPackage: activeClients.filter((client) => Boolean(client.packageId)).length,
         averageCollectionRate,
         annualRevenue: yearlyRevenue[yearlyRevenue.length - 1]?.value || 0,
         annualExpenses: yearlyExpenses[yearlyExpenses.length - 1]?.value || 0,

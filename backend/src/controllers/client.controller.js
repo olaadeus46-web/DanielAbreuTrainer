@@ -1043,8 +1043,9 @@ export const listClients = async (req, res, next) => {
   try {
     const trainer = await getTrainerOrThrow(req.userId);
     const now = new Date();
+    const showAbsent = req.query.absent === 'true';
     const clients = await prisma.client.findMany({
-      where: { trainerId: trainer.id },
+      where: { trainerId: trainer.id, isAbsent: showAbsent },
       include: {
         user: { select: { email: true } },
         package: true,
@@ -1114,20 +1115,9 @@ export const createClient = async (req, res, next) => {
       ['name', name],
       ['email', email],
       ['phone', phone],
-      ['heightCm', heightCm],
-      ['initialWeight', initialWeight],
-      ['waistCircumferenceCm', waistCircumferenceCm],
       ['birthDate', birthDate],
       ['address', address],
-      ['gymExperience', gymExperience],
-      ['goal', goal],
-      ['motivation', motivation],
-      ['activityAndWork', activityAndWork],
       ['trainingFrequency', trainingFrequency],
-      ['trainingAvailability', trainingAvailability],
-      ['nutritionHabits', nutritionHabits],
-      ['healthIssues', healthIssues],
-      ['trainingPlanNotes', trainingPlanNotes],
     ];
 
     const missingFields = requiredFields
@@ -1157,10 +1147,10 @@ export const createClient = async (req, res, next) => {
           trainerId: trainer.id,
           name,
           phone: String(phone).trim(),
-          heightCm: parseNumberField(heightCm, 'heightCm', { required: true }),
+          heightCm: heightCm ? parseNumberField(heightCm, 'heightCm') : null,
           age: age ? parseIntegerField(age, 'age') : null,
-          initialWeight: parseNumberField(initialWeight, 'initialWeight', { required: true }),
-          waistCircumferenceCm: parseNumberField(waistCircumferenceCm, 'waistCircumferenceCm', { required: true }),
+          initialWeight: initialWeight ? parseNumberField(initialWeight, 'initialWeight') : null,
+          waistCircumferenceCm: waistCircumferenceCm ? parseNumberField(waistCircumferenceCm, 'waistCircumferenceCm') : null,
           birthDate: parseDateField(birthDate, 'birthDate', { required: true }),
           address: String(address).trim(),
           startDate: parsedStartDate || new Date(),
@@ -1228,9 +1218,10 @@ export const extractIntakeWithAi = async (req, res, next) => {
 export const updateClient = async (req, res, next) => {
   try {
     const trainer = await getTrainerOrThrow(req.userId);
-    await findClientForTrainer(req.params.id, trainer.id);
+    const existingClient = await findClientForTrainer(req.params.id, trainer.id);
     const {
       name,
+      email,
       phone,
       heightCm,
       age,
@@ -1253,9 +1244,11 @@ export const updateClient = async (req, res, next) => {
       notes,
       avatarUrl,
       isOnline,
+      isAbsent,
     } = req.body;
 
     const parsedIsOnline = parseBooleanField(isOnline);
+    const parsedIsAbsent = parseBooleanField(isAbsent);
 
     const selectedPackage = packageId === undefined
       ? undefined
@@ -1263,6 +1256,19 @@ export const updateClient = async (req, res, next) => {
     const parsedStartDate = startDate === undefined
       ? undefined
       : (parseDateField(startDate, 'startDate') || new Date());
+
+    const trimmedEmail = email !== undefined ? String(email).trim() : undefined;
+    const currentEmail = existingClient.user?.email || '';
+    if (trimmedEmail && trimmedEmail !== currentEmail && existingClient.userId) {
+      const taken = await prisma.user.findFirst({ where: { email: trimmedEmail } });
+      if (taken && taken.id !== existingClient.userId) {
+        throw new AppError('Este email já está a ser utilizado por outro utilizador.', 409);
+      }
+      await prisma.user.update({
+        where: { id: existingClient.userId },
+        data: { email: trimmedEmail },
+      });
+    }
 
     const client = await prisma.client.update({
       where: { id: req.params.id },
@@ -1294,9 +1300,15 @@ export const updateClient = async (req, res, next) => {
         ...(trainingPlanNotes !== undefined && notes === undefined && { notes: trainingPlanNotes }),
         ...(avatarUrl && { avatarUrl }),
         ...(parsedIsOnline !== undefined && { isOnline: parsedIsOnline }),
+        ...(parsedIsAbsent !== undefined && { isAbsent: parsedIsAbsent }),
       },
     });
-    res.json(client);
+
+    const updated = await prisma.client.findFirst({
+      where: { id: req.params.id },
+      include: { user: { select: { email: true } }, package: true },
+    });
+    res.json(updated);
   } catch (err) { next(err); }
 };
 

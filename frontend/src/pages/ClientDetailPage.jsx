@@ -1,10 +1,9 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { clientsApi, metricsApi, workoutsApi, photosApi, packagesApi } from '../services/api';
+import { clientsApi, metricsApi, photosApi, packagesApi } from '../services/api';
 import { useTranslation } from 'react-i18next';
 import useMediaQuery from '../hooks/useMediaQuery';
 import BrandLoadingScreen from '../components/ui/BrandLoadingScreen';
-import MetricSheet from '../components/metrics/MetricSheet';
 import ClientAnalytics from '../components/metrics/ClientAnalytics';
 import { useAppFeedback } from '../components/ui/FeedbackProvider';
 
@@ -16,173 +15,6 @@ const card = {
   border: '1px solid rgba(159,189,217,0.24)',
   marginBottom: 16,
 };
-
-const EXERCISE_LIBRARY = [
-  'Agachamento', 'Supino', 'Remada Curvada', 'Levantamento Terra',
-  'Leg Press', 'Extensora', 'Flexora', 'Desenvolvimento Ombros',
-  'Elevação Lateral', 'Puxada Alta', 'Bíceps Curl', 'Tríceps Polia',
-  'Prancha', 'Abdominal', 'Passadeira', 'Bicicleta',
-];
-
-const WORKOUT_DOCUMENT_PREFIX = '__FITCOACH_WORKOUT_V2__';
-
-function emptyWorkoutDraft(dayLabels) {
-  return {
-    name: 'Trainingsplan',
-    notes: '',
-    days: dayLabels.map((label, dayOfWeek) => ({
-      dayOfWeek,
-      label: '',
-      exercises: [],
-    })),
-    document: null,
-  };
-}
-
-function formatWorkoutHeight(value) {
-  if (value === null || value === undefined || value === '') return '';
-  const numeric = Number(value);
-  if (!Number.isNaN(numeric)) {
-    const normalized = numeric > 3 ? numeric / 100 : numeric;
-    return `${normalized.toFixed(2).replace('.', ',')}m`;
-  }
-  return String(value).trim();
-}
-
-function formatWorkoutMeasure(value, suffix) {
-  if (value === null || value === undefined || value === '') return '';
-  return `${String(value).trim().replace('.', ',')}${suffix}`;
-}
-
-function normalizeWorkoutRow(row = {}) {
-  return {
-    block: String(row.block || ''),
-    exercise: String(row.exercise || row.name || ''),
-    sets: row.sets !== undefined && row.sets !== null ? String(row.sets) : '',
-    reps: row.reps !== undefined && row.reps !== null ? String(row.reps) : '',
-    load: row.load !== undefined && row.load !== null ? String(row.load) : '',
-  };
-}
-
-function buildDefaultWorkoutDocument(client) {
-  return {
-    planCode: '',
-    planDate: new Date().toISOString().slice(0, 10),
-    goalUntilNextAppointment: client?.goal || '',
-    priorities: client?.trainingPlanNotes || '',
-    warmup: '5-10 min - Herzfrequenz langsam steigern und den Körper mobil vorbereiten.',
-    trainingTitle: 'Ganzkörper Training 2-3x pro Woche',
-    workoutRows: [],
-    executionNotes: [
-      'Alle Übungen bis zur mittleren Ausbelastung durchführen.',
-      'Alle Ausführungen ohne Schwung und kontrolliert durchführen.',
-      'Pause zwischen Sätzen: 30 Sekunden.',
-    ].join('\n'),
-    nutritionNotes: client?.nutritionHabits || [
-      '3-4 Mahlzeiten pro Tag mit Fokus auf Protein.',
-      'Priorität bei jeder Mahlzeit: Protein -> Gemüse/Salat -> Kohlenhydrate.',
-      '2-2,5L Wasser pro Tag und möglichst natürliche Lebensmittel bevorzugen.',
-      '30g Whey Protein nach dem Training oder zwischen Mahlzeiten.',
-    ].join('\n'),
-    closingMessage: 'Ich freue mich auf deine Ergebnisse!',
-    personalData: {
-      name: client?.name || '',
-      birthDate: client?.birthDate ? toInputDate(client.birthDate) : '',
-      height: formatWorkoutHeight(client?.heightCm),
-      weight: formatWorkoutMeasure(client?.initialWeight, 'kg'),
-      waist: formatWorkoutMeasure(client?.waistCircumferenceCm, 'cm'),
-    },
-  };
-}
-
-function parseStructuredWorkoutDocument(notes) {
-  if (typeof notes !== 'string' || !notes.startsWith(WORKOUT_DOCUMENT_PREFIX)) return null;
-
-  try {
-    const parsed = JSON.parse(notes.slice(WORKOUT_DOCUMENT_PREFIX.length).trim());
-    return parsed?.document && typeof parsed.document === 'object' ? parsed.document : parsed;
-  } catch {
-    return null;
-  }
-}
-
-function buildWorkoutDocumentFromPlan({ client, plan, dayLabels }) {
-  const base = buildDefaultWorkoutDocument(client);
-  const structured = parseStructuredWorkoutDocument(plan?.notes);
-
-  if (structured) {
-    return {
-      ...base,
-      ...structured,
-      personalData: {
-        ...base.personalData,
-        ...(structured.personalData || {}),
-      },
-      workoutRows: Array.isArray(structured.workoutRows)
-        ? structured.workoutRows.map((row) => normalizeWorkoutRow(row))
-        : [],
-    };
-  }
-
-  const rows = [];
-  for (const day of plan?.days || []) {
-    if (!Array.isArray(day?.exercises) || day.exercises.length === 0) continue;
-
-    const blockLabel = day.label || dayLabels?.[day.dayOfWeek] || `Block ${rows.length + 1}`;
-    day.exercises.forEach((exercise, index) => {
-      rows.push({
-        block: index === 0 ? blockLabel : '',
-        exercise: exercise?.name || '',
-        sets: exercise?.sets ?? '',
-        reps: exercise?.reps || '',
-        load: exercise?.load || '',
-      });
-    });
-  }
-
-  return {
-    ...base,
-    planDate: plan?.updatedAt ? toInputDate(plan.updatedAt) : base.planDate,
-    trainingTitle: plan?.name || base.trainingTitle,
-    executionNotes: plan?.notes || base.executionNotes,
-    workoutRows: rows,
-  };
-}
-
-function serializeStructuredWorkoutDocument(document) {
-  return `${WORKOUT_DOCUMENT_PREFIX}\n${JSON.stringify({ version: 2, document })}`;
-}
-
-function buildWorkoutDaysFromDocument(dayLabels, document) {
-  const rows = Array.isArray(document?.workoutRows)
-    ? document.workoutRows
-      .map((row) => normalizeWorkoutRow(row))
-      .filter((row) => row.exercise.trim())
-    : [];
-
-  return dayLabels.map((label, dayOfWeek) => ({
-    dayOfWeek,
-    label: dayOfWeek === 0 ? (document?.trainingTitle || 'Trainingsplan') : '',
-    exercises: dayOfWeek === 0
-      ? rows.map((row) => ({
-        name: row.exercise,
-        sets: row.sets,
-        reps: row.reps,
-        load: row.load,
-        restSeconds: '',
-        notes: row.block,
-        videoUrl: '',
-      }))
-      : [],
-  }));
-}
-
-function formatWorkoutHeaderDate(value, locale) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(locale, { day: '2-digit', month: 'long', year: 'numeric' });
-}
 
 function toInputDate(value) {
   if (!value) return '';
@@ -255,6 +87,22 @@ function emptyCheckInForm() {
     wellbeingScore: '',
     nextGoalsPlanAdjustments: '',
   };
+}
+
+function getEmbedUrl(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'docs.google.com') {
+      const cleaned = url.split('?')[0].replace(/\/edit$/, '').replace(/\/pub$/, '');
+      if (/\/(spreadsheets|document|presentation)\/d\//.test(cleaned)) {
+        return `${cleaned}/preview`;
+      }
+    }
+    return url;
+  } catch {
+    return null;
+  }
 }
 
 function extractLegacyCheckInText(value) {
@@ -417,16 +265,14 @@ export default function ClientDetailPage() {
   const [definitions, setDefinitions] = useState([]);
   const [allEntries, setAllEntries] = useState([]);
   const [photos, setPhotos] = useState([]);
-  const [plan, setPlan] = useState(null);
-  const [allClients, setAllClients] = useState([]);
   const [packages, setPackages] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingOnlineStatus, setSavingOnlineStatus] = useState(false);
+  const [savingAbsentStatus, setSavingAbsentStatus] = useState(false);
   const [savingCheckIn, setSavingCheckIn] = useState(false);
   const [creatingCheckInLink, setCreatingCheckInLink] = useState(false);
-  const [savingWorkout, setSavingWorkout] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showCheckInPanel, setShowCheckInPanel] = useState(false);
   const [activeCheckInLinks, setActiveCheckInLinks] = useState([]);
@@ -461,6 +307,7 @@ export default function ClientDetailPage() {
 
   const [profileForm, setProfileForm] = useState({
     name: '',
+    email: '',
     phone: '',
     heightCm: '',
     age: '',
@@ -485,30 +332,21 @@ export default function ClientDetailPage() {
   });
 
   const [checkInForm, setCheckInForm] = useState(emptyCheckInForm);
-  const [workoutDraft, setWorkoutDraft] = useState(null);
-  const [originalWorkoutDraft, setOriginalWorkoutDraft] = useState(null);
-  const [editingWorkout, setEditingWorkout] = useState(false);
-  const [duplicateFromClientId, setDuplicateFromClientId] = useState('');
-  const [showWorkoutMenu, setShowWorkoutMenu] = useState(false);
-  const [activeWorkoutPanel, setActiveWorkoutPanel] = useState('');
-  const [activeWorkoutDayIndex, setActiveWorkoutDayIndex] = useState(null);
-  const [expandedExerciseIndex, setExpandedExerciseIndex] = useState(null);
-  const [extractingWorkoutAi, setExtractingWorkoutAi] = useState(false);
-  const [workoutImportFile, setWorkoutImportFile] = useState(null);
-  const workoutMenuRef = useRef(null);
+  const [selectedWorkoutPdfId, setSelectedWorkoutPdfId] = useState('');
+  const [workoutPdfBlobUrl, setWorkoutPdfBlobUrl] = useState(null);
+  const [loadingWorkoutPdf, setLoadingWorkoutPdf] = useState(false);
+  const [selectedMetricsLinkId, setSelectedMetricsLinkId] = useState('');
 
   const [galleryForm, setGalleryForm] = useState({ takenAt: '', notes: '', tags: '' });
   const [galleryPhotoFile, setGalleryPhotoFile] = useState(null);
   const [compareIds, setCompareIds] = useState({ before: '', after: '' });
 
   const locale = { en: 'en-US', pt: 'pt-PT', de: 'de-DE' }[i18n.language] || 'en-US';
-  const dayLabels = t('clientDetail.days', { returnObjects: true });
 
   const loadAll = async () => {
     const [
       clientRes,
       dashboardRes,
-      workoutRes,
       defsRes,
       photosRes,
       entriesRes,
@@ -517,12 +355,10 @@ export default function ClientDetailPage() {
       feedbackRes,
       feedbackLinksRes,
       fileFoldersRes,
-      clientsRes,
       packagesRes,
     ] = await Promise.all([
       clientsApi.get(id),
       clientsApi.dashboard(id),
-      workoutsApi.get(id),
       metricsApi.listDefinitions(id),
       photosApi.list(id),
       metricsApi.listEntries({ clientId: id }),
@@ -531,13 +367,11 @@ export default function ClientDetailPage() {
       clientsApi.listFeedback(id),
       clientsApi.listFeedbackLinks(id),
       clientsApi.listFileFolders(id),
-      clientsApi.list(),
       packagesApi.list().catch(() => ({ data: [] })),
     ]);
 
     setClient(clientRes.data);
     setDashboardEntries(dashboardRes.data.entries || []);
-    setPlan(workoutRes.data);
     setDefinitions(defsRes.data || []);
     setPhotos(photosRes.data || []);
     setAllEntries(entriesRes.data || []);
@@ -551,7 +385,6 @@ export default function ClientDetailPage() {
       if (prev && nextFolders.some((folder) => folder.id === prev)) return prev;
       return nextFolders[0]?.id || '';
     });
-    setAllClients((clientsRes.data || []).filter((c) => c.id !== id));
     setPackages(packagesRes.data || []);
   };
 
@@ -566,6 +399,7 @@ export default function ClientDetailPage() {
     if (!client) return;
     setProfileForm({
       name: client.name || '',
+      email: client.user?.email || client.email || '',
       phone: client.phone || '',
       heightCm: client.heightCm ?? '',
       age: client.age ?? '',
@@ -590,6 +424,7 @@ export default function ClientDetailPage() {
     });
     setOriginalProfileForm({
       name: client.name || '',
+      email: client.user?.email || client.email || '',
       phone: client.phone || '',
       heightCm: client.heightCm ?? '',
       age: client.age ?? '',
@@ -636,45 +471,32 @@ export default function ClientDetailPage() {
   }, [activeTab, id]);
 
   useEffect(() => {
-    const base = emptyWorkoutDraft(dayLabels);
-    const document = buildWorkoutDocumentFromPlan({ client, plan, dayLabels });
-
-    base.name = plan?.name || document.trainingTitle || 'Trainingsplan';
-    base.notes = serializeStructuredWorkoutDocument(document);
-    base.days = buildWorkoutDaysFromDocument(dayLabels, document);
-    base.document = document;
-
-    setWorkoutDraft(base);
-    setOriginalWorkoutDraft(JSON.parse(JSON.stringify(base)));
-    setEditingWorkout(false);
-  }, [client, plan, i18n.language]);
-
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        setShowWorkoutMenu(false);
-        setActiveWorkoutPanel('');
-        setActiveWorkoutDayIndex(null);
-        setExpandedExerciseIndex(null);
+    if (!selectedWorkoutPdfId) {
+      if (workoutPdfBlobUrl) {
+        URL.revokeObjectURL(workoutPdfBlobUrl);
+        setWorkoutPdfBlobUrl(null);
       }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  useEffect(() => {
-    if (!showWorkoutMenu) return undefined;
-
-    const handlePointerDown = (event) => {
-      if (workoutMenuRef.current && !workoutMenuRef.current.contains(event.target)) {
-        setShowWorkoutMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [showWorkoutMenu]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingWorkoutPdf(true);
+    clientsApi.downloadFileItem(id, selectedWorkoutPdfId)
+      .then((res) => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(res.data);
+        setWorkoutPdfBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setWorkoutPdfBlobUrl(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingWorkoutPdf(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedWorkoutPdfId, id]);
 
   const payment = client?.payments?.[0];
   const initials = client?.name?.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
@@ -690,14 +512,33 @@ export default function ClientDetailPage() {
       }));
   }, [dashboardEntries, weightDef, locale]);
 
-  const workoutExerciseCount = useMemo(
-    () => (workoutDraft?.days || []).reduce((total, day) => total + day.exercises.length, 0),
-    [workoutDraft],
-  );
+  const allPdfFiles = useMemo(() => {
+    const pdfs = [];
+    for (const folder of fileFolders) {
+      for (const item of folder.items || []) {
+        if (item.type === 'FILE' && item.mimeType === 'application/pdf') {
+          pdfs.push({ ...item, folderName: folder.name });
+        }
+      }
+    }
+    return pdfs;
+  }, [fileFolders]);
 
-  const workoutDaysUsed = useMemo(
-    () => (workoutDraft?.days || []).filter((day) => day.exercises.length > 0).length,
-    [workoutDraft],
+  const allLinkItems = useMemo(() => {
+    const links = [];
+    for (const folder of fileFolders) {
+      for (const item of folder.items || []) {
+        if (item.type === 'LINK' && item.externalUrl) {
+          links.push({ ...item, folderName: folder.name });
+        }
+      }
+    }
+    return links;
+  }, [fileFolders]);
+
+  const selectedMetricsLink = useMemo(
+    () => allLinkItems.find((item) => item.id === selectedMetricsLinkId) || null,
+    [allLinkItems, selectedMetricsLinkId],
   );
 
   const tabs = [
@@ -1131,6 +972,26 @@ export default function ClientDetailPage() {
     }
   };
 
+  const toggleAbsentStatus = async () => {
+    if (!client) return;
+
+    setSavingAbsentStatus(true);
+    try {
+      const nextAbsentStatus = !client.isAbsent;
+      await clientsApi.update(id, { isAbsent: nextAbsentStatus });
+
+      if (nextAbsentStatus) {
+        navigate('/clients');
+        return;
+      }
+      setClient((prev) => (prev ? { ...prev, isAbsent: nextAbsentStatus } : prev));
+    } catch (err) {
+      showError(err.response?.data?.error || t('clientDetail.absentError'));
+    } finally {
+      setSavingAbsentStatus(false);
+    }
+  };
+
   const saveCheckIn = async (e) => {
     e.preventDefault();
 
@@ -1155,206 +1016,6 @@ export default function ClientDetailPage() {
       showError(err.response?.data?.error || t('clientDetail.checkinError'));
     } finally {
       setSavingCheckIn(false);
-    }
-  };
-
-  const updateWorkoutDay = (dayIndex, update) => {
-    setWorkoutDraft((prev) => {
-      const next = { ...prev, days: [...prev.days] };
-      next.days[dayIndex] = update(next.days[dayIndex]);
-      return next;
-    });
-  };
-
-  const updateWorkoutExercise = (dayIndex, exerciseIndex, patch) => {
-    updateWorkoutDay(dayIndex, (day) => {
-      const exercises = [...day.exercises];
-      exercises[exerciseIndex] = { ...exercises[exerciseIndex], ...patch };
-      return { ...day, exercises };
-    });
-  };
-
-  const addExercise = (dayIndex, presetName = '') => {
-    updateWorkoutDay(dayIndex, (day) => ({
-      ...day,
-      exercises: [...day.exercises, { name: presetName, sets: '', reps: '', load: '', restSeconds: '', notes: '', videoUrl: '' }],
-    }));
-    setActiveWorkoutDayIndex(dayIndex);
-    setActiveWorkoutPanel('day');
-    setExpandedExerciseIndex(workoutDraft?.days?.[dayIndex]?.exercises?.length ?? 0);
-  };
-
-  const removeExercise = (dayIndex, exerciseIndex) => {
-    updateWorkoutDay(dayIndex, (day) => ({
-      ...day,
-      exercises: day.exercises.filter((_, idx) => idx !== exerciseIndex),
-    }));
-    setExpandedExerciseIndex((prev) => {
-      if (prev === null) return prev;
-      if (prev === exerciseIndex) return null;
-      return prev > exerciseIndex ? prev - 1 : prev;
-    });
-  };
-
-  const updateWorkoutDocument = (updater) => {
-    setWorkoutDraft((prev) => {
-      if (!prev) return prev;
-      const nextDocument = typeof updater === 'function' ? updater(prev.document || buildDefaultWorkoutDocument(client)) : updater;
-      return { ...prev, document: nextDocument };
-    });
-  };
-
-  const updateWorkoutDocumentField = (field, value) => {
-    updateWorkoutDocument((current) => ({ ...current, [field]: value }));
-  };
-
-  const updateWorkoutPersonalField = (field, value) => {
-    updateWorkoutDocument((current) => ({
-      ...current,
-      personalData: {
-        ...(current.personalData || {}),
-        [field]: value,
-      },
-    }));
-  };
-
-  const updateWorkoutRow = (rowIndex, patch) => {
-    updateWorkoutDocument((current) => {
-      const nextRows = [...(current.workoutRows || [])];
-      nextRows[rowIndex] = { ...nextRows[rowIndex], ...patch };
-      return { ...current, workoutRows: nextRows };
-    });
-  };
-
-  const addWorkoutRow = (presetName = '') => {
-    updateWorkoutDocument((current) => ({
-      ...current,
-      workoutRows: [...(current.workoutRows || []), { block: '', exercise: presetName, sets: '', reps: '', load: '' }],
-    }));
-  };
-
-  const removeWorkoutRow = (rowIndex) => {
-    updateWorkoutDocument((current) => ({
-      ...current,
-      workoutRows: (current.workoutRows || []).filter((_, index) => index !== rowIndex),
-    }));
-  };
-
-  const saveWorkout = async () => {
-    if (!workoutDraft) return;
-    const document = {
-      ...buildDefaultWorkoutDocument(client),
-      ...(workoutDraft.document || {}),
-      personalData: {
-        ...buildDefaultWorkoutDocument(client).personalData,
-        ...(workoutDraft.document?.personalData || {}),
-      },
-      workoutRows: (workoutDraft.document?.workoutRows || [])
-        .map((row) => normalizeWorkoutRow(row))
-        .filter((row) => row.exercise.trim()),
-    };
-
-    setSavingWorkout(true);
-    try {
-      await workoutsApi.save({
-        clientId: id,
-        name: workoutDraft.name?.trim() || document.trainingTitle || 'Trainingsplan',
-        notes: serializeStructuredWorkoutDocument(document),
-        days: buildWorkoutDaysFromDocument(dayLabels, document),
-      });
-      setOriginalWorkoutDraft(JSON.parse(JSON.stringify({
-        ...workoutDraft,
-        name: workoutDraft.name?.trim() || document.trainingTitle || 'Trainingsplan',
-        notes: serializeStructuredWorkoutDocument(document),
-        days: buildWorkoutDaysFromDocument(dayLabels, document),
-        document,
-      })));
-      setEditingWorkout(false);
-      setActiveWorkoutPanel('');
-      setActiveWorkoutDayIndex(null);
-      setExpandedExerciseIndex(null);
-      await loadAll();
-      showSuccess(t('clientDetail.workoutSaved'));
-    } catch (err) {
-      showError(err.response?.data?.error || t('clientDetail.workoutError'));
-    } finally {
-      setSavingWorkout(false);
-    }
-  };
-
-  const duplicateWorkout = async () => {
-    if (!duplicateFromClientId) return;
-    setSavingWorkout(true);
-    try {
-      await workoutsApi.duplicate({ sourceClientId: duplicateFromClientId, targetClientId: id });
-      setActiveWorkoutPanel('');
-      await loadAll();
-      showSuccess(t('clientDetail.workoutDuplicated'));
-    } catch (err) {
-      showError(err.response?.data?.error || t('clientDetail.workoutError'));
-    } finally {
-      setSavingWorkout(false);
-    }
-  };
-
-  const extractWorkoutFromFileWithAi = async () => {
-    if (!workoutImportFile) {
-      showWarning('Seleciona um PDF ou imagem para preencher o plano.');
-      return;
-    }
-
-    setExtractingWorkoutAi(true);
-    try {
-      const formData = new FormData();
-      formData.append('clientId', id);
-      formData.append('workoutFile', workoutImportFile);
-
-      const response = await workoutsApi.extractAi(formData);
-      const extractedFields = response.data?.fields || {};
-
-      setWorkoutDraft((prev) => {
-        if (!prev) return prev;
-
-        const nextDocument = { ...(prev.document || buildDefaultWorkoutDocument(client)) };
-
-        for (const [key, value] of Object.entries(extractedFields)) {
-          if (key === 'personalData' || key === 'workoutRows') continue;
-          if (value === null || value === undefined || value === '') continue;
-          nextDocument[key] = String(value);
-        }
-
-        if (extractedFields.personalData && typeof extractedFields.personalData === 'object') {
-          nextDocument.personalData = { ...(nextDocument.personalData || {}) };
-          for (const [key, value] of Object.entries(extractedFields.personalData)) {
-            if (value === null || value === undefined || value === '') continue;
-            nextDocument.personalData[key] = String(value);
-          }
-        }
-
-        if (Array.isArray(extractedFields.workoutRows) && extractedFields.workoutRows.length > 0) {
-          nextDocument.workoutRows = extractedFields.workoutRows.map((row) => ({
-            block: row?.block || '',
-            exercise: row?.exercise || '',
-            sets: row?.sets || '',
-            reps: row?.reps || '',
-            load: row?.load || '',
-          }));
-        }
-
-        return {
-          ...prev,
-          name: extractedFields.name || prev.name,
-          document: nextDocument,
-        };
-      });
-
-      setWorkoutImportFile(null);
-      setActiveWorkoutPanel('');
-      showSuccess(`Plano preenchido com AI. ${response.data?.recognizedCount || 0} campo(s) reconhecido(s).`);
-    } catch (err) {
-      showError(err.response?.data?.error || 'Erro ao analisar o PDF/imagem do plano.');
-    } finally {
-      setExtractingWorkoutAi(false);
     }
   };
 
@@ -1500,6 +1161,11 @@ export default function ClientDetailPage() {
                 {client.isOnline ? (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#EAF8EF', color: '#2D7A47', borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 800 }}>
                     {t('clientDetail.onlineLabel')}
+                  </span>
+                ) : null}
+                {client.isAbsent ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#FEF3E2', color: '#B66A17', borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 800 }}>
+                    {t('clientDetail.absentLabel')}
                   </span>
                 ) : null}
               </div>
@@ -1756,6 +1422,29 @@ export default function ClientDetailPage() {
                     : (client.isOnline ? t('clientDetail.onlineRemove') : t('clientDetail.onlineMark'))}
                 </button>
 
+                <button
+                  type="button"
+                  onClick={toggleAbsentStatus}
+                  disabled={savingAbsentStatus}
+                  style={{
+                    minHeight: 36,
+                    borderRadius: 10,
+                    border: client.isAbsent ? '1px solid #2D7A47' : '1px solid #B66A17',
+                    background: client.isAbsent ? '#2D7A47' : '#FFFFFF',
+                    color: client.isAbsent ? '#FFFFFF' : '#B66A17',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    padding: '0 12px',
+                    cursor: savingAbsentStatus ? 'not-allowed' : 'pointer',
+                    opacity: savingAbsentStatus ? 0.7 : 1,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {savingAbsentStatus
+                    ? t('clientDetail.absentSaving')
+                    : (client.isAbsent ? t('clientDetail.absentReactivate') : t('clientDetail.absentMark'))}
+                </button>
+
                 <QuickIconButton title={t('common.edit')} onClick={() => setEditingProfile(true)}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -1770,6 +1459,7 @@ export default function ClientDetailPage() {
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: 12 }}>
               {[
                 [t('clientDetail.profileForm.fullName'), 'name', 'text'],
+                [t('clientDetail.profileForm.email'), 'email', 'email'],
                 [t('clientDetail.profileForm.phone'), 'phone', 'text'],
                 [t('clientDetail.profileForm.heightCm'), 'heightCm', 'number'],
                 [t('clientDetail.profileForm.weightKg'), 'initialWeight', 'number'],
@@ -1925,7 +1615,81 @@ export default function ClientDetailPage() {
 
       {activeTab === 'metrics' && (
         <>
-          <MetricSheet clientId={id} canManageDefinitions />
+          <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px', background: 'linear-gradient(135deg, #FFFFFF 0%, #F4F8FC 100%)' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#5682B1', marginBottom: 12 }}>
+              {t('clientDetail.tabs.metrics')}
+            </div>
+            <div>
+              <label style={labelStyle}>{t('clientDetail.metricsLink.selectLink')}</label>
+              <select
+                value={selectedMetricsLinkId}
+                onChange={(e) => setSelectedMetricsLinkId(e.target.value)}
+                style={fieldStyle}
+              >
+                <option value="">{t('clientDetail.metricsLink.selectLinkPlaceholder')}</option>
+                {allLinkItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title} ({item.folderName})
+                  </option>
+                ))}
+              </select>
+            </div>
+            {allLinkItems.length === 0 && (
+              <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 14, background: '#F4F8FC', border: '1px solid #D6E2EF', fontSize: 13, color: '#739EC9', lineHeight: 1.6 }}>
+                {t('clientDetail.metricsLink.noLinks')}
+              </div>
+            )}
+          </div>
+
+          {selectedMetricsLink && (
+            <>
+              <div style={{ ...card, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#10253C' }}>{selectedMetricsLink.title}</div>
+                  <div style={{ fontSize: 12, color: '#739EC9', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selectedMetricsLink.externalUrl}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => window.open(selectedMetricsLink.externalUrl, '_blank', 'noopener,noreferrer')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '10px 18px',
+                    border: 'none',
+                    borderRadius: 12,
+                    background: '#5682B1',
+                    color: '#FFFFFF',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                  {t('clientDetail.metricsLink.openLink')}
+                </button>
+              </div>
+
+              {getEmbedUrl(selectedMetricsLink.externalUrl) && (
+                <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+                  <iframe
+                    src={getEmbedUrl(selectedMetricsLink.externalUrl)}
+                    title={selectedMetricsLink.title}
+                    style={{ width: '100%', height: isMobile ? 500 : 700, border: 'none', display: 'block' }}
+                    sandbox="allow-scripts allow-same-origin allow-popups"
+                  />
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
 
@@ -2277,7 +2041,7 @@ export default function ClientDetailPage() {
             {checkIns.length > 0 ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
                 <span style={{ padding: '6px 10px', borderRadius: 999, background: '#FFFFFF', border: '1px solid #739EC9', fontSize: 11, fontWeight: 800, color: '#000000' }}>
-                  {checkIns.length} check-in{checkIns.length === 1 ? '' : 's'}
+                  {checkIns.length} {t('clientDetail.tabs.checkins').toLowerCase()}
                 </span>
                 {latestCheckIn ? (
                   <span style={{ padding: '6px 10px', borderRadius: 999, background: '#FFFFFF', border: '1px solid #739EC9', fontSize: 11, fontWeight: 800, color: '#5682B1' }}>
@@ -2588,320 +2352,49 @@ export default function ClientDetailPage() {
         </>
       )}
 
-      {activeTab === 'workout' && workoutDraft && (
+      {activeTab === 'workout' && (
         <>
           <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px', background: 'linear-gradient(135deg, #FFFFFF 0%, #F4F8FC 100%)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#5682B1' }}>
-                  Trainingsdokument
-                </div>
-                <div style={{ marginTop: 6, fontSize: 22, fontWeight: 800, color: '#000000' }}>
-                  {workoutDraft.name || 'Trainingsplan'}
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                  <span style={{ padding: '6px 10px', borderRadius: 999, background: '#FFFFFF', color: '#5682B1', fontSize: 11, fontWeight: 700 }}>
-                    {workoutDraft.document?.planCode?.trim() || 'Ohne Referenz'}
-                  </span>
-                  <span style={{ padding: '6px 10px', borderRadius: 999, background: '#FFFFFF', color: '#5682B1', fontSize: 11, fontWeight: 700 }}>
-                    {`${(workoutDraft.document?.workoutRows || []).filter((row) => row.exercise?.trim()).length} Übungen`}
-                  </span>
-                </div>
-                <div style={{ marginTop: 10, fontSize: 12, color: '#739EC9' }}>
-                  {plan?.updatedAt ? `${t('clientDetail.lastUpdated')}: ${new Date(plan.updatedAt).toLocaleString(locale)}` : 'Noch kein Trainingsplan gespeichert.'}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {!editingWorkout ? (
-                  <QuickIconButton title={t('common.edit')} onClick={() => setEditingWorkout(true)}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                      <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                  </QuickIconButton>
-                ) : null}
-                <div ref={workoutMenuRef} style={{ position: 'relative' }}>
-                  <QuickIconButton title="Mais acoes" onClick={() => setShowWorkoutMenu((prev) => !prev)}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                      <circle cx="12" cy="5" r="2" />
-                      <circle cx="12" cy="12" r="2" />
-                      <circle cx="12" cy="19" r="2" />
-                    </svg>
-                  </QuickIconButton>
-                  {showWorkoutMenu ? (
-                    <div style={{ position: 'absolute', right: 0, top: 42, zIndex: 10, width: 220, borderRadius: 14, background: '#FFFFFF', border: '1px solid #739EC9', boxShadow: '0 18px 48px rgba(0,0,0,0.16)', padding: 8 }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowWorkoutMenu(false);
-                          setActiveWorkoutPanel('duplicate');
-                        }}
-                        style={{ width: '100%', textAlign: 'left', border: 'none', background: 'transparent', padding: '10px 12px', borderRadius: 10, fontSize: 13, color: '#000000', cursor: 'pointer' }}
-                      >
-                        {t('clientDetail.duplicate')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowWorkoutMenu(false);
-                          setActiveWorkoutPanel('import-ai');
-                        }}
-                        style={{ width: '100%', textAlign: 'left', border: 'none', background: 'transparent', padding: '10px 12px', borderRadius: 10, fontSize: 13, color: '#000000', cursor: 'pointer' }}
-                      >
-                        Preencher por PDF / imagem com AI
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#5682B1' }}>
+              {t('clientDetail.tabs.workout')}
             </div>
+            <div style={{ marginTop: 12 }}>
+              <label style={labelStyle}>{t('clientDetail.selectPdf')}</label>
+              <select
+                value={selectedWorkoutPdfId}
+                onChange={(e) => setSelectedWorkoutPdfId(e.target.value)}
+                style={fieldStyle}
+              >
+                <option value="">{t('clientDetail.selectPdfPlaceholder')}</option>
+                {allPdfFiles.map((file) => (
+                  <option key={file.id} value={file.id}>
+                    {file.title || file.fileName} ({file.folderName})
+                  </option>
+                ))}
+              </select>
+            </div>
+            {allPdfFiles.length === 0 && (
+              <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 14, background: '#F4F8FC', border: '1px solid #D6E2EF', fontSize: 13, color: '#739EC9', lineHeight: 1.6 }}>
+                {t('clientDetail.noPdfsFound')}
+              </div>
+            )}
           </div>
 
-          <fieldset disabled={!editingWorkout} style={{ display: 'grid', gap: 12, border: 'none', padding: 0, margin: 0, minWidth: 0 }}>
-            <div style={{ ...card, marginBottom: 0, padding: isMobile ? '18px 16px' : '20px 22px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.9fr 0.9fr', gap: 12 }}>
-                <div>
-                  <label style={labelStyle}>Titel des Plans</label>
-                  <input value={workoutDraft.name} onChange={(e) => setWorkoutDraft((prev) => ({ ...prev, name: e.target.value }))} style={fieldStyle} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Referenz</label>
-                  <input value={workoutDraft.document?.planCode || ''} onChange={(e) => updateWorkoutDocumentField('planCode', e.target.value)} style={fieldStyle} placeholder="z.B. 545" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Datum</label>
-                  <input type="date" value={workoutDraft.document?.planDate || ''} onChange={(e) => updateWorkoutDocumentField('planDate', e.target.value)} style={fieldStyle} />
-                </div>
-              </div>
+          {loadingWorkoutPdf && (
+            <div style={{ ...card, padding: '40px 24px', textAlign: 'center' }}>
+              <div style={{ fontSize: 13, color: '#739EC9' }}>{t('common.loading')}</div>
             </div>
+          )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-              <div style={{ ...card, marginBottom: 0, padding: isMobile ? '18px 16px' : '20px 22px' }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#000000', marginBottom: 14 }}>Persönliche Daten</div>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-                  <div>
-                    <label style={labelStyle}>Name</label>
-                    <input value={workoutDraft.document?.personalData?.name || ''} onChange={(e) => updateWorkoutPersonalField('name', e.target.value)} style={fieldStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Geburtsdatum</label>
-                    <input type="date" value={workoutDraft.document?.personalData?.birthDate || ''} onChange={(e) => updateWorkoutPersonalField('birthDate', e.target.value)} style={fieldStyle} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Grösse</label>
-                    <input value={workoutDraft.document?.personalData?.height || ''} onChange={(e) => updateWorkoutPersonalField('height', e.target.value)} style={fieldStyle} placeholder="1,65m" />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Gewicht</label>
-                    <input value={workoutDraft.document?.personalData?.weight || ''} onChange={(e) => updateWorkoutPersonalField('weight', e.target.value)} style={fieldStyle} placeholder="95kg" />
-                  </div>
-                  <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-                    <label style={labelStyle}>Bauchumfang</label>
-                    <input value={workoutDraft.document?.personalData?.waist || ''} onChange={(e) => updateWorkoutPersonalField('waist', e.target.value)} style={fieldStyle} placeholder="105cm" />
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ ...card, marginBottom: 0, padding: isMobile ? '18px 16px' : '20px 22px' }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#000000', marginBottom: 14 }}>Trainingsziel bis zum nächsten Termin</div>
-                <textarea
-                  rows={4}
-                  value={workoutDraft.document?.goalUntilNextAppointment || ''}
-                  onChange={(e) => updateWorkoutDocumentField('goalUntilNextAppointment', e.target.value)}
-                  style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
-                  placeholder="Gewicht Reduktion, Trainingsroutine aufbauen, Schmerzen lindern"
-                />
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#000000', margin: '18px 0 14px' }}>Weitere Prioritäten / Hinweise</div>
-                <textarea
-                  rows={5}
-                  value={workoutDraft.document?.priorities || ''}
-                  onChange={(e) => updateWorkoutDocumentField('priorities', e.target.value)}
-                  style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }}
-                  placeholder="Zusätzliche medizinische oder organisatorische Hinweise"
-                />
-              </div>
+          {!loadingWorkoutPdf && workoutPdfBlobUrl && (
+            <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+              <iframe
+                src={workoutPdfBlobUrl}
+                title={t('clientDetail.tabs.workout')}
+                style={{ width: '100%', height: isMobile ? 500 : 800, border: 'none', display: 'block' }}
+              />
             </div>
-
-            <div style={{ ...card, marginBottom: 0, padding: isMobile ? '18px 16px' : '20px 22px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.9fr 1.1fr', gap: 12, alignItems: 'end' }}>
-                <div>
-                  <label style={labelStyle}>Warmup</label>
-                  <textarea rows={3} value={workoutDraft.document?.warmup || ''} onChange={(e) => updateWorkoutDocumentField('warmup', e.target.value)} style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Überschrift Trainingsblock</label>
-                  <input value={workoutDraft.document?.trainingTitle || ''} onChange={(e) => updateWorkoutDocumentField('trainingTitle', e.target.value)} style={fieldStyle} />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 12, flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: '#000000' }}>Ganzkörper Training</div>
-                  <div style={{ fontSize: 12, color: '#739EC9', marginTop: 3 }}>Übung, Sätze, Wiederholungen und Gewicht wie im neuen Planformat.</div>
-                </div>
-                <QuickActionButton onClick={() => addWorkoutRow()}>Zeile hinzufügen</QuickActionButton>
-              </div>
-
-              <div style={{ border: '1px solid #D6E2EF', borderRadius: 16, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 2fr 0.8fr 1fr 0.9fr 44px', gap: 0, background: '#EEF4FA', color: '#5682B1', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>
-                  <div style={{ padding: '12px 10px' }}>Block</div>
-                  <div style={{ padding: '12px 10px' }}>Übung</div>
-                  <div style={{ padding: '12px 10px' }}>Sätze</div>
-                  <div style={{ padding: '12px 10px' }}>Wiederholungen</div>
-                  <div style={{ padding: '12px 10px' }}>Gewicht</div>
-                  <div style={{ padding: '12px 10px' }} />
-                </div>
-
-                {(workoutDraft.document?.workoutRows || []).length === 0 ? (
-                  <div style={{ padding: '18px 16px', background: '#FFFFFF', fontSize: 12, color: '#739EC9' }}>
-                    Noch keine Übungen hinzugefügt.
-                  </div>
-                ) : (workoutDraft.document?.workoutRows || []).map((row, rowIndex) => (
-                  <div key={`workout-row-${rowIndex}`} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 2fr 0.8fr 1fr 0.9fr 44px', gap: 8, padding: '10px', background: '#FFFFFF', borderTop: rowIndex === 0 ? 'none' : '1px solid #EEF4FA' }}>
-                    <input value={row.block || ''} onChange={(e) => updateWorkoutRow(rowIndex, { block: e.target.value })} style={fieldStyle} placeholder="z.B. 15 min Cardio" />
-                    <input value={row.exercise || ''} onChange={(e) => updateWorkoutRow(rowIndex, { exercise: e.target.value })} style={fieldStyle} placeholder="Beinpresse 45 Grad" />
-                    <input value={row.sets || ''} onChange={(e) => updateWorkoutRow(rowIndex, { sets: e.target.value })} style={fieldStyle} placeholder="3x" />
-                    <input value={row.reps || ''} onChange={(e) => updateWorkoutRow(rowIndex, { reps: e.target.value })} style={fieldStyle} placeholder="15-20" />
-                    <input value={row.load || ''} onChange={(e) => updateWorkoutRow(rowIndex, { load: e.target.value })} style={fieldStyle} placeholder="20kg" />
-                    <button type="button" onClick={() => removeWorkoutRow(rowIndex)} style={{ border: 'none', background: '#F4F8FC', color: '#5682B1', borderRadius: 12, cursor: 'pointer', fontSize: 16, fontWeight: 700 }}>
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
-                {EXERCISE_LIBRARY.map((exerciseName) => (
-                  <button
-                    key={exerciseName}
-                    type="button"
-                    onClick={() => addWorkoutRow(exerciseName)}
-                    style={{ border: '1px solid #739EC9', background: '#FFFFFF', borderRadius: 999, padding: '6px 10px', fontSize: 11, color: '#000000', cursor: 'pointer' }}
-                  >
-                    + {exerciseName}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-              <div style={{ ...card, marginBottom: 0, padding: isMobile ? '18px 16px' : '20px 22px' }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#000000', marginBottom: 14 }}>Plan Durchführung</div>
-                <textarea
-                  rows={10}
-                  value={workoutDraft.document?.executionNotes || ''}
-                  onChange={(e) => updateWorkoutDocumentField('executionNotes', e.target.value)}
-                  style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.6 }}
-                />
-              </div>
-
-              <div style={{ ...card, marginBottom: 0, padding: isMobile ? '18px 16px' : '20px 22px' }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#000000', marginBottom: 14 }}>Ernährung / Supplementation</div>
-                <textarea
-                  rows={10}
-                  value={workoutDraft.document?.nutritionNotes || ''}
-                  onChange={(e) => updateWorkoutDocumentField('nutritionNotes', e.target.value)}
-                  style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.6 }}
-                />
-              </div>
-            </div>
-
-            <div style={{ ...card, marginBottom: 0, padding: isMobile ? '18px 16px' : '20px 22px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 12, alignItems: 'end' }}>
-                <div>
-                  <label style={labelStyle}>Abschlussnachricht</label>
-                  <textarea rows={3} value={workoutDraft.document?.closingMessage || ''} onChange={(e) => updateWorkoutDocumentField('closingMessage', e.target.value)} style={{ ...fieldStyle, resize: 'vertical', lineHeight: 1.5 }} />
-                </div>
-                <div style={{ padding: '14px 16px', borderRadius: 16, background: '#F4F8FC', border: '1px solid #D6E2EF', minWidth: isMobile ? 'auto' : 220 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#5682B1', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Vorschau</div>
-                  <div style={{ marginTop: 8, fontSize: 16, fontWeight: 800, color: '#000000' }}>{workoutDraft.document?.planCode || 'Plan'}</div>
-                  <div style={{ marginTop: 4, fontSize: 12, color: '#739EC9' }}>{formatWorkoutHeaderDate(workoutDraft.document?.planDate, locale)}</div>
-                </div>
-              </div>
-            </div>
-          </fieldset>
-
-          {editingWorkout ? (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-              <button type="button" onClick={saveWorkout} disabled={savingWorkout} style={{ padding: '10px 18px', border: 'none', borderRadius: 10, background: '#5682B1', color: '#FFFFFF', fontWeight: 600, cursor: 'pointer' }}>
-                {savingWorkout ? t('clientDetail.saving') : t('clientDetail.saveWorkout')}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingWorkout(false);
-                  if (originalWorkoutDraft) setWorkoutDraft(JSON.parse(JSON.stringify(originalWorkoutDraft)));
-                }}
-                style={{ padding: '10px 18px', border: '1px solid #739EC9', borderRadius: 10, background: '#FFFFFF', color: '#000000', fontWeight: 600, cursor: 'pointer' }}
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
-          ) : null}
-
-          {activeWorkoutPanel === 'duplicate' ? (
-            <SlidePanel
-              title={t('clientDetail.duplicate')}
-              subtitle="Copiar plano de outro cliente"
-              onClose={() => setActiveWorkoutPanel('')}
-              footer={(
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                  <QuickActionButton onClick={() => setActiveWorkoutPanel('')}>Fechar</QuickActionButton>
-                  <QuickActionButton onClick={duplicateWorkout} disabled={!duplicateFromClientId || savingWorkout} primary>
-                    {savingWorkout ? t('clientDetail.saving') : t('clientDetail.duplicate')}
-                  </QuickActionButton>
-                </div>
-              )}
-            >
-              <div>
-                <label style={labelStyle}>{t('clientDetail.duplicateFrom')}</label>
-                <select value={duplicateFromClientId} onChange={(e) => setDuplicateFromClientId(e.target.value)} style={fieldStyle}>
-                  <option value="">{t('clientDetail.selectClient')}</option>
-                  {allClients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-            </SlidePanel>
-          ) : null}
-
-          {activeWorkoutPanel === 'import-ai' ? (
-            <SlidePanel
-              title="Preencher plano com AI"
-              subtitle="Faz upload de um PDF ou imagem e a AI tenta preencher o documento do plano"
-              onClose={() => {
-                setActiveWorkoutPanel('');
-                setWorkoutImportFile(null);
-              }}
-              footer={(
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-                  <QuickActionButton onClick={() => {
-                    setActiveWorkoutPanel('');
-                    setWorkoutImportFile(null);
-                  }}>
-                    Fechar
-                  </QuickActionButton>
-                  <QuickActionButton onClick={extractWorkoutFromFileWithAi} disabled={extractingWorkoutAi} primary>
-                    {extractingWorkoutAi ? 'A analisar...' : 'Analisar e preencher'}
-                  </QuickActionButton>
-                </div>
-              )}
-            >
-              <div style={{ display: 'grid', gap: 12 }}>
-                <div style={{ fontSize: 12, color: '#5682B1', lineHeight: 1.55 }}>
-                  Usa o mesmo princípio do intake do cliente: a AI só preenche o que conseguir reconhecer no documento.
-                </div>
-                <input
-                  type="file"
-                  accept="application/pdf,image/*"
-                  onChange={(e) => setWorkoutImportFile(e.target.files?.[0] || null)}
-                  style={fieldStyle}
-                />
-                <div style={{ padding: '12px 14px', borderRadius: 14, background: '#F4F8FC', border: '1px solid #D6E2EF', fontSize: 12, color: '#5682B1', lineHeight: 1.6 }}>
-                  Campos suportados: referência, data, dados pessoais, objetivo, warmup, título do treino, linhas da tabela, notas de execução, nutrição e mensagem final.
-                </div>
-              </div>
-            </SlidePanel>
-          ) : null}
+          )}
         </>
       )}
 

@@ -66,14 +66,6 @@ export const updatePackage = async (req, res, next) => {
       },
     });
 
-    // Keep linked clients in sync when package price changes.
-    if (monthlyPrice !== undefined) {
-      await prisma.client.updateMany({
-        where: { trainerId: trainer.id, packageId: existing.id },
-        data: { monthlyPrice: pkg.monthlyPrice },
-      });
-    }
-
     res.json(pkg);
   } catch (err) { next(err); }
 };

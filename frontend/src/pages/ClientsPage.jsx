@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { clientsApi, packagesApi } from '../services/api';
+import { clientsApi, packagesApi, automationsApi } from '../services/api';
 import { useTranslation } from 'react-i18next';
 import useMediaQuery from '../hooks/useMediaQuery';
 import BrandLoadingScreen from '../components/ui/BrandLoadingScreen';
@@ -40,6 +40,183 @@ function formatCurrency(value) {
   return `CHF ${Number(value || 0).toFixed(0)}`;
 }
 
+const welcomeCard = {
+  background: '#FFFFFF',
+  borderRadius: 20,
+  padding: '20px 24px',
+  boxShadow: '0 18px 40px rgba(16,37,60,0.08)',
+  border: '1px solid rgba(159,189,217,0.24)',
+};
+
+const welcomeBtn = (variant = 'primary') => ({
+  padding: '9px 20px',
+  borderRadius: 10,
+  border: 'none',
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: 'pointer',
+  transition: 'opacity .15s',
+  ...(variant === 'primary'
+    ? { background: 'linear-gradient(135deg, #10253C, #2C4F73)', color: '#FFFFFF' }
+    : variant === 'danger'
+      ? { background: 'linear-gradient(135deg, #C53131, #E05757)', color: '#FFFFFF' }
+      : { background: '#F0F4F8', color: '#10253C', border: '1px solid #C0D8EE' }),
+});
+
+const welcomeInput = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '10px 13px',
+  borderRadius: 10,
+  border: '1.5px solid #C0D8EE',
+  fontSize: 13.5,
+  outline: 'none',
+  fontFamily: 'inherit',
+  background: '#FBFDFF',
+  color: '#11253E',
+};
+
+const welcomeTextarea = {
+  ...welcomeInput,
+  minHeight: 200,
+  resize: 'vertical',
+  lineHeight: 1.5,
+  whiteSpace: 'pre-wrap',
+};
+
+const welcomeLabel = {
+  display: 'block',
+  fontSize: 11,
+  fontWeight: 700,
+  color: '#10253C',
+  marginBottom: 7,
+  letterSpacing: '0.07em',
+};
+
+function WelcomeEmailSendPopup({ data, onClose, onSent }) {
+  const { t } = useTranslation();
+  const { showError, showSuccess } = useAppFeedback();
+  const fileInputRef = useRef(null);
+  const [subject, setSubject] = useState(data.subject);
+  const [messageBody, setMessageBody] = useState(data.messageBody);
+  const [attachments, setAttachments] = useState(data.attachments || []);
+  const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
+
+  async function handleFileUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await automationsApi.uploadAttachment(formData);
+      setAttachments((prev) => [...prev, response.data]);
+    } catch {
+      showError(t('automations.modal.uploadError'));
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function removeAttachment(index) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSend() {
+    if (!messageBody.trim()) {
+      showError(t('automations.welcomeEmail.emptyMessage'));
+      return;
+    }
+    setSending(true);
+    try {
+      await automationsApi.sendWelcomeEmail({
+        clientId: data.clientId,
+        messageBody,
+        subject,
+        attachments,
+      });
+      showSuccess(t('automations.welcomeEmail.sentSuccess', { name: data.clientName }));
+      onSent();
+    } catch (err) {
+      showError(err.response?.data?.error || t('automations.welcomeEmail.sendError'));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}>
+      <div style={{ ...welcomeCard, maxWidth: 580, width: '92%', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>
+          {t('automations.welcomeEmail.sendTitle')}
+        </h3>
+        <p style={{ margin: '0 0 6px', fontSize: 13, color: '#5682B1' }}>
+          {t('automations.welcomeEmail.sendSubtitle', { name: data.clientName })}
+        </p>
+        <div style={{ fontSize: 12, color: '#6B86A3', marginBottom: 18 }}>
+          {t('automations.welcomeEmail.sendTo')}: <strong>{data.clientEmail}</strong>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <span style={welcomeLabel}>{t('automations.modal.subject')}</span>
+          <input style={welcomeInput} value={subject} onChange={(e) => setSubject(e.target.value)} />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <span style={welcomeLabel}>{t('automations.welcomeEmail.emailBody')}</span>
+          <textarea style={welcomeTextarea} value={messageBody} onChange={(e) => setMessageBody(e.target.value)} />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <button
+            type="button"
+            onClick={() => setShowAttachments((p) => !p)}
+            style={{ ...welcomeBtn('secondary'), fontSize: 12, width: '100%', textAlign: 'center' }}
+          >
+            {t('automations.welcomeEmail.attachmentsBtn', { count: attachments.length })}
+          </button>
+
+          {showAttachments && (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {attachments.map((att, index) => (
+                <div key={index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: '#F7FBFF', border: '1px solid #DCE9F5' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#10253C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                    {att.originalName || att.filename}
+                  </div>
+                  <button type="button" onClick={() => removeAttachment(index)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C53131', fontSize: 14, padding: '2px 6px', fontWeight: 700 }}>
+                    x
+                  </button>
+                </div>
+              ))}
+              <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileUpload} />
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+                style={{ ...welcomeBtn('secondary'), fontSize: 12, textAlign: 'center' }}
+              >
+                {uploading ? t('automations.modal.uploading') : t('automations.modal.addAttachment')}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button type="button" style={{ ...welcomeBtn('secondary'), flex: 1 }} onClick={onClose}>
+            {t('automations.welcomeEmail.skip')}
+          </button>
+          <button type="button" style={{ ...welcomeBtn('primary'), flex: 2 }} onClick={handleSend} disabled={sending}>
+            {sending ? t('automations.welcomeEmail.sending') : t('automations.welcomeEmail.send')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ClientsPage() {
   const { t, i18n } = useTranslation();
   const { showError, showSuccess, showWarning, showToast } = useAppFeedback();
@@ -53,7 +230,6 @@ export default function ClientsPage() {
     email: '',
     phone: '',
     heightCm: '',
-    age: '',
     initialWeight: '',
     waistCircumferenceCm: '',
     birthDate: '',
@@ -80,10 +256,15 @@ export default function ClientsPage() {
   const [copiedOnlineLink, setCopiedOnlineLink] = useState(false);
   const [extractingIntake, setExtractingIntake] = useState(false);
   const [intakeFile, setIntakeFile] = useState(null);
+  const [showAbsent, setShowAbsent] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [applyingAbsent, setApplyingAbsent] = useState(false);
+  const [welcomePopup, setWelcomePopup] = useState(null);
 
   const load = async () => {
     const results = await Promise.allSettled([
-      clientsApi.list(),
+      clientsApi.list({ absent: showAbsent }),
       packagesApi.list(),
     ]);
 
@@ -99,7 +280,7 @@ export default function ClientsPage() {
 
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [showAbsent]);
 
   const handleCreate = async (e) => {
     e.preventDefault(); setSaving(true);
@@ -116,14 +297,16 @@ export default function ClientsPage() {
         throw new Error(t('clients.modal.packageRequired'));
       }
 
-      await clientsApi.create(payload);
+      const clientRes = await clientsApi.create(payload);
+      const createdClient = clientRes.data;
       setShowModal(false);
+
+      const savedForm = { ...form };
       setForm({
         name: '',
         email: '',
         phone: '',
         heightCm: '',
-        age: '',
         initialWeight: '',
         waistCircumferenceCm: '',
         birthDate: '',
@@ -144,6 +327,27 @@ export default function ClientsPage() {
         notes: '',
       });
       load();
+
+      try {
+        const wcRes = await automationsApi.getWelcomeConfig();
+        const wc = wcRes.data;
+        if (wc && wc.messageTemplate) {
+          const price = createdClient.monthlyPrice ?? savedForm.monthlyPrice ?? '';
+          const amount = price ? `CHF ${Number(price).toFixed(0)}` : '';
+          const filledTemplate = (wc.messageTemplate || '')
+            .replaceAll('{{name}}', createdClient.name || savedForm.name || '')
+            .replaceAll('{{amount}}', amount);
+
+          setWelcomePopup({
+            clientId: createdClient.id,
+            clientName: createdClient.name || savedForm.name,
+            clientEmail: savedForm.email,
+            subject: wc.subject || 'Daniel Abreu PT — Willkommen',
+            messageBody: filledTemplate,
+            attachments: Array.isArray(wc.attachments) ? [...wc.attachments] : [],
+          });
+        }
+      } catch { /* welcome config not available, skip */ }
     } catch (err) { showError(err.response?.data?.error || err.message || t('clients.errorCreate')); }
     finally { setSaving(false); }
   };
@@ -206,6 +410,35 @@ export default function ClientsPage() {
     }
   };
 
+  const toggleSelectClient = (e, clientId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedIds((prev) =>
+      prev.includes(clientId) ? prev.filter((id) => id !== clientId) : [...prev, clientId]
+    );
+  };
+
+  const applyAbsentBulk = async () => {
+    if (selectedIds.length === 0) return;
+    setApplyingAbsent(true);
+    try {
+      const newAbsent = !showAbsent;
+      await Promise.all(selectedIds.map((cid) => clientsApi.update(cid, { isAbsent: newAbsent })));
+      setSelectedIds([]);
+      setSelectMode(false);
+      load();
+    } catch (err) {
+      showError(err.response?.data?.error || t('clients.errorAbsent'));
+    } finally {
+      setApplyingAbsent(false);
+    }
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds([]);
+  };
+
   const f = (k) => ({ value: form[k], onChange: e => setForm({ ...form, [k]: e.target.value }) });
 
   const rosterStats = useMemo(() => {
@@ -253,7 +486,9 @@ export default function ClientsPage() {
                   {t('clients.title')}
                 </div>
                 <h1 style={{ fontSize: 34, lineHeight: 1.05, fontWeight: 800, margin: 0 }}>
-                  {t('clients.activeCount', { count: clients.length })}
+                  {showAbsent
+                    ? t('clients.absentCount', { count: clients.length })
+                    : t('clients.activeCount', { count: clients.length })}
                 </h1>
                 <p style={{ fontSize: 16, lineHeight: 1.6, color: '#E4EFF9', margin: '14px 0 0', maxWidth: 620 }}>
                   {t('clients.portfolioSummary', { amount: formatCurrency(rosterStats.monthlyRevenue), attention: rosterStats.clientsNeedingAttention })}
@@ -305,11 +540,47 @@ export default function ClientsPage() {
 
       <div style={{ ...card, display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', flexDirection: isMobile ? 'column' : 'row', gap: 10, marginBottom: 18 }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#10253C' }}>{t('clients.clientRoster')}</div>
-          <div style={{ fontSize: 13, color: '#6B86A3', marginTop: 4 }}>{t('clients.clientRosterHint')}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#10253C' }}>
+            {showAbsent ? t('clients.absentRoster') : t('clients.clientRoster')}
+          </div>
+          <div style={{ fontSize: 13, color: '#6B86A3', marginTop: 4 }}>
+            {showAbsent ? t('clients.absentRosterHint') : t('clients.clientRosterHint')}
+          </div>
         </div>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: '#F8FBFF', border: '1px solid rgba(159,189,217,0.28)', fontSize: 12, fontWeight: 700, color: '#10253C' }}>
-          {t('clients.followUpNeeded')}: {rosterStats.clientsNeedingAttention}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => { setShowAbsent(!showAbsent); setLoading(true); exitSelectMode(); }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '8px 14px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+              border: showAbsent ? '1px solid #5682B1' : '1px solid rgba(159,189,217,0.28)',
+              background: showAbsent ? '#EDF5FC' : '#F8FBFF',
+              color: showAbsent ? '#5682B1' : '#10253C',
+              cursor: 'pointer',
+            }}
+          >
+            {showAbsent ? t('clients.showActive') : t('clients.showAbsent')}
+          </button>
+          {clients.length > 0 && (
+            <button
+              onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '8px 14px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                border: selectMode ? '1px solid #5682B1' : '1px solid rgba(159,189,217,0.28)',
+                background: selectMode ? '#EDF5FC' : '#F8FBFF',
+                color: selectMode ? '#5682B1' : '#10253C',
+                cursor: 'pointer',
+              }}
+            >
+              {selectMode ? t('clients.cancelSelect') : `✏️ ${t('clients.selectClients')}`}
+            </button>
+          )}
+          {!showAbsent && !selectMode && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: '#F8FBFF', border: '1px solid rgba(159,189,217,0.28)', fontSize: 12, fontWeight: 700, color: '#10253C' }}>
+              {t('clients.followUpNeeded')}: {rosterStats.clientsNeedingAttention}
+            </div>
+          )}
         </div>
       </div>
 
@@ -317,13 +588,21 @@ export default function ClientsPage() {
         {sortedClients.map((c) => {
           const payment = c.payments?.[0];
           const status = payment?.status || 'PENDING';
+          const isSelected = selectedIds.includes(c.id);
+          const CardWrapper = selectMode ? 'div' : Link;
+          const cardProps = selectMode
+            ? { key: c.id, onClick: (e) => toggleSelectClient(e, c.id), style: { ...card, textDecoration: 'none', color: 'inherit', display: 'block', transition: 'box-shadow .2s, transform .2s, border-color .15s', padding: '18px 20px', position: 'relative', overflow: 'hidden', cursor: 'pointer', border: isSelected ? '2px solid #5682B1' : card.border } }
+            : { key: c.id, to: `/clients/${c.id}`, style: { ...card, textDecoration: 'none', color: 'inherit', display: 'block', transition: 'box-shadow .2s, transform .2s', padding: '18px 20px', position: 'relative', overflow: 'hidden' }, onMouseEnter: e => { e.currentTarget.style.boxShadow = '0 22px 46px rgba(16,37,60,0.12)'; e.currentTarget.style.transform = 'translateY(-2px)'; }, onMouseLeave: e => { e.currentTarget.style.boxShadow = card.boxShadow; e.currentTarget.style.transform = 'translateY(0)'; } };
           return (
-            <Link key={c.id} to={`/clients/${c.id}`}
-              style={{ ...card, textDecoration: 'none', color: 'inherit', display: 'block', transition: 'box-shadow .2s, transform .2s', padding: '18px 20px', position: 'relative', overflow: 'hidden' }}
-              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 22px 46px rgba(16,37,60,0.12)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.boxShadow = card.boxShadow; e.currentTarget.style.transform = 'translateY(0)'; }}
-            >
+            <CardWrapper {...cardProps}>
               <div style={{ position: 'absolute', inset: '0 auto auto 0', width: 6, height: '100%', background: status === 'PAID' ? '#2D7A47' : status === 'OVERDUE' ? '#C53131' : '#B66A17' }} />
+
+              {selectMode && (
+                <div style={{ position: 'absolute', top: 12, right: 12, width: 22, height: 22, borderRadius: 6, border: isSelected ? '2px solid #5682B1' : '2px solid #9FBDD9', background: isSelected ? '#5682B1' : '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {isSelected && <span style={{ color: '#FFFFFF', fontSize: 13, fontWeight: 800, lineHeight: 1 }}>✓</span>}
+                </div>
+              )}
+
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18, marginLeft: 6 }}>
                 <Avatar name={c.name} size={44} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -358,10 +637,47 @@ export default function ClientsPage() {
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: '#5682B1' }}>{t('clients.openClient')}</div>
               </div>
-            </Link>
+            </CardWrapper>
           );
         })}
       </div>
+
+      {selectMode && selectedIds.length > 0 && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          background: '#10253C', color: '#FFFFFF', borderRadius: 16,
+          padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14,
+          boxShadow: '0 12px 36px rgba(16,37,60,0.35)', zIndex: 40,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>
+            {t('clients.selectedCount', { count: selectedIds.length })}
+          </span>
+          <button
+            onClick={applyAbsentBulk}
+            disabled={applyingAbsent}
+            style={{
+              padding: '8px 16px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 800,
+              background: showAbsent ? '#2D7A47' : '#B66A17',
+              color: '#FFFFFF',
+              cursor: applyingAbsent ? 'not-allowed' : 'pointer',
+              opacity: applyingAbsent ? 0.7 : 1,
+            }}
+          >
+            {applyingAbsent
+              ? t('clientDetail.absentSaving')
+              : (showAbsent ? t('clients.reactivate') : t('clients.markAbsent'))}
+          </button>
+          <button
+            onClick={exitSelectMode}
+            style={{
+              padding: '8px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.3)',
+              background: 'transparent', color: '#FFFFFF', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            {t('common.cancel')}
+          </button>
+        </div>
+      )}
 
       {clients.length === 0 && (
         <div style={{ ...card, textAlign: 'center', padding: isMobile ? '32px 20px' : '60px 40px' }}>
@@ -425,13 +741,12 @@ export default function ClientsPage() {
                 [t('clients.modal.form.fullName'), 'text', 'name', t('clients.modal.placeholder.fullName'), true],
                 [t('clients.modal.form.email'), 'email', 'email', t('clients.modal.placeholder.email'), true],
                 [t('clients.modal.form.phone'), 'text', 'phone', t('clients.modal.placeholder.phone'), true],
-                [t('clients.modal.form.heightCm'), 'number', 'heightCm', '180', true],
-                [t('clients.modal.form.weightKg'), 'number', 'initialWeight', '82.5', true],
-                [t('clients.modal.form.waistCm'), 'number', 'waistCircumferenceCm', '90', true],
+                [t('clients.modal.form.heightCm'), 'number', 'heightCm', '180', false],
+                [t('clients.modal.form.weightKg'), 'number', 'initialWeight', '82.5', false],
+                [t('clients.modal.form.waistCm'), 'number', 'waistCircumferenceCm', '90', false],
                 [t('clients.modal.form.birthDate'), 'date', 'birthDate', '', true],
                 [t('clients.modal.form.address'), 'text', 'address', t('clients.modal.placeholder.address'), true],
                 [t('clients.modal.startDate'), 'date', 'startDate', '', false],
-                [t('clients.modal.age'), 'number', 'age', '28', false],
                 [t('clients.modal.form.trainingFrequency'), 'number', 'trainingFrequency', '3', true],
               ].map(([label, type, key, ph, required]) => (
                 <div key={key} style={{ marginBottom: 14 }}>
@@ -459,7 +774,6 @@ export default function ClientsPage() {
                   <label style={labelStyle}>{label}</label>
                   <textarea
                     {...f(key)}
-                    required
                     placeholder={placeholder}
                     rows={3}
                     style={{ resize: 'vertical' }}
@@ -520,9 +834,6 @@ export default function ClientsPage() {
                 <label style={labelStyle}>{t('clients.modal.notes')}</label>
                 <textarea {...f('notes')} placeholder={t('clients.modal.notesPlaceholder')} rows={3} style={{ resize: 'vertical' }} />
               </div>
-              <div style={{ fontSize: 12, color: '#5682B1', marginBottom: 20, background: '#FFFFFF', padding: '10px 14px', borderRadius: 8, fontWeight: 500 }}>
-                {t('clients.modal.defaultPasswordNote')} <strong>fitcoach123</strong> {t('clients.modal.defaultPasswordSuffix')}
-              </div>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexDirection: isMobile ? 'column-reverse' : 'row' }}>
                 <button type="button" onClick={() => setShowModal(false)} style={{
                   padding: '10px 18px', border: '1.5px solid #739EC9', borderRadius: 10,
@@ -542,6 +853,14 @@ export default function ClientsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {welcomePopup && (
+        <WelcomeEmailSendPopup
+          data={welcomePopup}
+          onClose={() => setWelcomePopup(null)}
+          onSent={() => setWelcomePopup(null)}
+        />
       )}
 
       {showOnlineLinkModal && (

@@ -31,7 +31,7 @@ export const authApi = {
 };
 
 export const clientsApi = {
-  list: () => api.get('/clients'),
+  list: (params) => api.get('/clients', { params }),
   get: (id) => api.get(`/clients/${id}`),
   createOnlineLink: (data) => api.post('/clients/online-links', data),
   listFeedback: (id) => api.get(`/clients/${id}/feedback`),
@@ -100,6 +100,15 @@ export const automationsApi = {
   update: (id, data) => api.patch(`/automations/${id}`, data),
   execute: (id) => api.post(`/automations/${id}/execute`),
   delete: (id) => api.delete(`/automations/${id}`),
+  uploadAttachment: (formData) => api.post('/automations/upload-attachment', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  getWelcomeConfig: () => api.get('/automations/welcome-config'),
+  sendWelcomeEmail: (data) => api.post('/automations/send-welcome-email', data),
+  gmailAuthUrl: () => api.get('/automations/gmail/auth-url'),
+  gmailCallback: (code) => api.post('/automations/gmail/callback', { code }),
+  gmailStatus: () => api.get('/automations/gmail/status'),
+  gmailDisconnect: () => api.delete('/automations/gmail/disconnect'),
 };
 
 export const workoutsApi = {
@@ -120,9 +129,10 @@ export const photosApi = {
 };
 
 export const financeApi = {
-  overview: () => api.get('/finance/overview'),
+  overview: (params) => api.get('/finance/overview', { params }),
   stats: () => api.get('/finance/stats'),
   updatePayment: (clientId, data) => api.patch(`/finance/payments/${clientId}`, data),
+  updateExpectedAmount: (clientId, data) => api.patch(`/finance/payments/${clientId}/expected`, data),
   listExpenses: (params) => api.get('/finance/expenses', { params }),
   createExpense: (formData) => api.post('/finance/expenses', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
