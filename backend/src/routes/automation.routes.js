@@ -19,7 +19,8 @@ import {
   sendWelcomeEmail,
 } from '../controllers/automation.controller.js';
 
-const __filename = fileURLToPath(import.meta.url);
+const __metaUrl = typeof import.meta !== 'undefined' && typeof import.meta.url === 'string' ? import.meta.url : undefined;
+const __filename = __metaUrl ? fileURLToPath(__metaUrl) : path.resolve(process.cwd(), 'backend/src/routes/automation.routes.js');
 const __dirname = path.dirname(__filename);
 
 const storage = multer.diskStorage({
