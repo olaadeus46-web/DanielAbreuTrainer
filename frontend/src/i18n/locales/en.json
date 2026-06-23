@@ -330,8 +330,20 @@
     "metricsLink": {
       "selectLink": "Select a link",
       "selectLinkPlaceholder": "Choose a link from the client's files...",
-      "noLinks": "No links found. Add a link in the Files tab first.",
+      "noLinks": "No links found. Add a link using the button above or in the Files tab.",
       "openLink": "Open link"
+    },
+    "workoutLink": {
+      "selectLink": "Select a link",
+      "selectLinkPlaceholder": "Choose a link from the client's files...",
+      "noLinks": "No links found. Add a link using the button above or in the Files tab.",
+      "openLink": "Open link"
+    },
+    "inlineLink": {
+      "addLink": "+ Add link",
+      "save": "Save link",
+      "titlePlaceholderMetrics": "e.g. Google Sheets - Metrics",
+      "titlePlaceholderWorkout": "e.g. Google Docs - Training Plan"
     },
     "configuredMetrics": "Configured metrics",
     "noMetrics": "No metrics configured.",
@@ -748,6 +760,12 @@
       }
     },
     "monthResetHint": "Each month starts fresh — set expected amounts for each client before marking as paid.",
+    "monthResetHintWithCarryover": "Each month starts fresh, but there are pending amounts carried over from previous months. Check the flagged clients below.",
+    "carryoverAlert": "{{amount}} in pending amounts from previous months",
+    "carryoverAlertHint": "These amounts carried over from previous months and have not been settled yet.",
+    "carryoverLabel": "previous pending",
+    "carryoverBadge": "Previous pending",
+    "carryoverDetail": "Previous pending: {{amount}}",
     "editExpected": "Edit expected amount",
     "expectedError": "Failed to update expected amount.",
     "expectedModal": {

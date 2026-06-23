@@ -198,11 +198,35 @@ export const getFinanceOverview = async (req, res, next) => {
       : [];
     const prevPaymentMap = new Map(prevPayments.map((p) => [p.clientId, p]));
 
+    const allPastPending = clientIds.length
+      ? await prisma.payment.findMany({
+          where: {
+            clientId: { in: clientIds },
+            status: { in: ['PENDING', 'OVERDUE'] },
+          },
+        })
+      : [];
+    const pastPendingByClient = new Map();
+    for (const p of allPastPending) {
+      if (p.year > year || (p.year === year && p.month >= month)) continue;
+      const amt = Number(p.amount || 0);
+      if (amt <= 0) continue;
+      if (!pastPendingByClient.has(p.clientId)) pastPendingByClient.set(p.clientId, []);
+      pastPendingByClient.get(p.clientId).push({
+        month: p.month,
+        year: p.year,
+        amount: amt,
+        status: p.status,
+      });
+    }
+
     const allSummary = clients.map((c) => {
       const payment = c.payments[0];
       const expectedAmount = payment ? Number(payment.amount || 0) : 0;
       const prev = prevPaymentMap.get(c.id);
       const paymentStatus = payment?.status ?? 'PENDING';
+      const carryoverItems = pastPendingByClient.get(c.id) || [];
+      const pendingCarryover = carryoverItems.reduce((sum, item) => sum + item.amount, 0);
 
       return {
         clientId: c.id,
@@ -214,18 +238,21 @@ export const getFinanceOverview = async (req, res, next) => {
         packageName: c.package?.name || null,
         packagePrice: c.package ? Number(c.package.monthlyPrice || 0) : null,
         previousMonthAmount: prev ? Number(prev.amount || 0) : null,
+        pendingCarryover,
+        carryoverDetails: carryoverItems,
         isAbsent: c.isAbsent || false,
       };
     });
 
     const summary = allSummary.filter(
-      (c) => !c.isAbsent || c.paymentStatus === 'PAID'
+      (c) => !c.isAbsent || c.paymentStatus === 'PAID' || c.pendingCarryover > 0
     );
 
     const totalExpected = summary.reduce((sum, c) => sum + c.expectedAmount, 0);
     const totalReceived = summary
       .filter((c) => c.paymentStatus === 'PAID')
       .reduce((sum, c) => sum + c.expectedAmount, 0);
+    const totalPendingCarryover = summary.reduce((sum, c) => sum + c.pendingCarryover, 0);
 
     res.json({
       month, year,
@@ -233,6 +260,7 @@ export const getFinanceOverview = async (req, res, next) => {
       totalExpected,
       totalReceived,
       totalPending: totalExpected - totalReceived,
+      totalPendingCarryover,
       clients: summary,
     });
   } catch (err) { next(err); }

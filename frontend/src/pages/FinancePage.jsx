@@ -441,12 +441,17 @@ export default function FinancePage() {
     const paidCount = data.clients.filter((client) => client.paymentStatus === 'PAID').length;
     const overdueCount = data.clients.filter((client) => client.paymentStatus === 'OVERDUE').length;
     const unpaidClients = data.clients
-      .filter((client) => client.paymentStatus !== 'PAID')
+      .filter((client) => client.paymentStatus !== 'PAID' || client.pendingCarryover > 0)
       .sort((left, right) => {
+        const hasCarryoverL = (left.pendingCarryover || 0) > 0 ? 0 : 1;
+        const hasCarryoverR = (right.pendingCarryover || 0) > 0 ? 0 : 1;
+        if (hasCarryoverL !== hasCarryoverR) return hasCarryoverL - hasCarryoverR;
         const statusWeight = { OVERDUE: 0, PENDING: 1, PAID: 2 };
         const byStatus = statusWeight[left.paymentStatus] - statusWeight[right.paymentStatus];
         if (byStatus !== 0) return byStatus;
-        return Number(right.expectedAmount || 0) - Number(left.expectedAmount || 0);
+        const totalL = Number(left.expectedAmount || 0) + Number(left.pendingCarryover || 0);
+        const totalR = Number(right.expectedAmount || 0) + Number(right.pendingCarryover || 0);
+        return totalR - totalL;
       });
     const unpaidCount = unpaidClients.length;
     const collectionRate = data.totalExpected > 0 ? (data.totalReceived / data.totalExpected) * 100 : 0;
@@ -491,6 +496,30 @@ export default function FinancePage() {
         <KpiCard title={t('finance.collectionRate')} value={`${Math.round(overview.collectionRate)}%`} detail={t('finance.paidClients', { count: overview.paidCount, total: data.totalClients })} accent="#5682B1" />
       </div>
 
+      {data.totalPendingCarryover > 0 && (
+        <div style={{
+          ...card,
+          padding: '14px 18px',
+          marginBottom: 18,
+          background: '#FFF8F0',
+          border: '1px solid #E8C9A0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}>
+          <span style={{ fontSize: 20 }}>&#9888;</span>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#8B5E1A' }}>
+              {t('finance.carryoverAlert', { amount: formatCurrency(data.totalPendingCarryover) })}
+            </div>
+            <div style={{ fontSize: 12, color: '#A07A3A', marginTop: 2 }}>
+              {t('finance.carryoverAlertHint')}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : '1.15fr 1fr', gap: 16, marginBottom: 18 }}>
         <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px' }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: '#10253C', marginBottom: 10 }}>{t('finance.billingProgress')}</div>
@@ -498,7 +527,7 @@ export default function FinancePage() {
             {t('finance.statusOverview', { month: monthName, year: viewYear })}
           </div>
           <div style={{ fontSize: 12, color: '#5682B1', marginBottom: 14, padding: '8px 10px', background: '#F7FBFF', borderRadius: 10, border: '1px solid rgba(159,189,217,0.3)' }}>
-            {t('finance.monthResetHint')}
+            {data.totalPendingCarryover > 0 ? t('finance.monthResetHintWithCarryover') : t('finance.monthResetHint')}
           </div>
           <div style={{ height: 12, background: '#EDF5FC', borderRadius: 999, overflow: 'hidden' }}>
             <div
@@ -539,8 +568,28 @@ export default function FinancePage() {
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#10253C' }}>{client.clientName}</div>
                 <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 2 }}>{formatCurrency(client.expectedAmount)}</div>
+                {client.pendingCarryover > 0 && (
+                  <div style={{ fontSize: 11, color: '#B66A17', fontWeight: 700, marginTop: 2 }}>
+                    + {formatCurrency(client.pendingCarryover)} {t('finance.carryoverLabel')}
+                  </div>
+                )}
               </div>
-              <PayBadge status={client.paymentStatus} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                <PayBadge status={client.paymentStatus} />
+                {client.pendingCarryover > 0 && (
+                  <span style={{
+                    fontSize: 10,
+                    padding: '3px 8px',
+                    borderRadius: 999,
+                    fontWeight: 700,
+                    background: '#FFF4E8',
+                    color: '#B66A17',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {t('finance.carryoverBadge')}
+                  </span>
+                )}
+              </div>
             </div>
           )) : (
             <div style={{ fontSize: 13, color: '#6B86A3', marginTop: 12 }}>{t('finance.allPaymentsSettled')}</div>
@@ -577,7 +626,14 @@ export default function FinancePage() {
             <tbody>
               {data.clients.map((client, index) => (
                 <tr key={client.clientId} style={{ borderBottom: index < data.clients.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
-                  <td style={{ padding: '14px 8px 14px 0', color: '#10253C', fontWeight: 700 }}>{client.clientName}</td>
+                  <td style={{ padding: '14px 8px 14px 0', color: '#10253C', fontWeight: 700 }}>
+                    {client.clientName}
+                    {client.pendingCarryover > 0 && (
+                      <div style={{ fontSize: 11, color: '#B66A17', fontWeight: 700, marginTop: 3 }}>
+                        {t('finance.carryoverDetail', { amount: formatCurrency(client.pendingCarryover) })}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ textAlign: 'center', padding: '14px 8px' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ color: client.expectedAmount > 0 ? '#10253C' : '#9FBDD9', fontWeight: 700 }}>
@@ -608,7 +664,24 @@ export default function FinancePage() {
                       )}
                     </div>
                   </td>
-                  <td style={{ textAlign: 'center', padding: '14px 8px' }}><PayBadge status={client.paymentStatus} /></td>
+                  <td style={{ textAlign: 'center', padding: '14px 8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <PayBadge status={client.paymentStatus} />
+                      {client.pendingCarryover > 0 && (
+                        <span style={{
+                          fontSize: 10,
+                          padding: '3px 8px',
+                          borderRadius: 999,
+                          fontWeight: 700,
+                          background: '#FFF4E8',
+                          color: '#B66A17',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {t('finance.carryoverBadge')}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td style={{ textAlign: 'right', padding: '14px 0' }}>
                     <button
                       type="button"

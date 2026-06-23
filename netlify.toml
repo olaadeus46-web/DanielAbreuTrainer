@@ -1,10 +1,13 @@
 [build]
-  command = "npm --prefix frontend ci && npm --prefix frontend run build && frontend/node_modules/.bin/esbuild netlify/function-src/api.js --bundle --platform=node --format=cjs --target=node20 --external:node-cron --outfile=netlify/functions-built/api.js"
+  command = "npm --prefix frontend ci && npm --prefix frontend run build && frontend/node_modules/.bin/esbuild netlify/function-src/api.js --bundle --platform=node --format=cjs --target=node20 --external:node-cron --outfile=netlify/functions-built/api.js && frontend/node_modules/.bin/esbuild netlify/function-src/cron-automations.js --bundle --platform=node --format=cjs --target=node20 --outfile=netlify/functions-built/cron-automations.js"
   publish = "frontend/dist"
 
 [functions]
   directory = "netlify/functions-built"
   node_bundler = "none"
+
+[functions."cron-automations"]
+  schedule = "*/5 * * * *"
 
 [[redirects]]
   from = "/api/*"

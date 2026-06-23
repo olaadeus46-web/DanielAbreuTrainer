@@ -102,7 +102,7 @@ export default function Layout() {
         zIndex: 40,
       }}>
         {/* Logo */}
-        <div style={{ padding: '24px 20px 20px', borderBottom: '1px solid rgba(255,255,255,0.14)' }}>
+        <div style={{ padding: '24px 20px 20px', borderBottom: '1px solid rgba(255,255,255,0.14)', flexShrink: 0 }}>
           <img
             src={logoHeader}
             alt="Daniel Abreu Personal Trainer"
@@ -114,7 +114,7 @@ export default function Layout() {
         </div>
 
         {/* Nav */}
-        <nav style={{ flex: 1, padding: '16px 12px', overflowY: 'auto' }}>
+        <nav style={{ flex: 1, padding: '16px 12px', overflowY: 'auto', flexShrink: 0 }}>
           {navItems.map(({ to, label, icon, end }) => (
             <NavLink key={to} to={to} end={end} style={({ isActive }) => ({
               display: 'flex', alignItems: 'center', gap: 10,
@@ -133,14 +133,14 @@ export default function Layout() {
           ))}
         </nav>
         {/* User */}
-        <div style={{ borderBottom: '1px solid rgba(255,255,255,0.14)', display: 'flex', justifyContent: 'center' }}>
+        <div style={{ borderBottom: '1px solid rgba(255,255,255,0.14)', display: 'flex', justifyContent: 'center', flexShrink: 1, minHeight: 0, overflow: 'hidden' }}>
           <img
             src={profileImage}
             alt="Profile"
-            style={{ width: isMobile ? '78px' : '120px', height: 'auto', display: 'block' }}
+            style={{ width: isMobile ? '78px' : '120px', height: 'auto', display: 'block', objectFit: 'contain', minHeight: 0 }}
           />
         </div>
-        <div style={{ padding: '16px 16px 20px' }}>
+        <div style={{ padding: '16px 16px 20px', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{
                 width: 34, height: 34, borderRadius: '50%',

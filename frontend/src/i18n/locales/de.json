@@ -327,8 +327,20 @@
     "metricsLink": {
       "selectLink": "Link auswählen",
       "selectLinkPlaceholder": "Einen Link aus den Kundendateien wählen...",
-      "noLinks": "Keine Links gefunden. Fügen Sie zuerst einen Link im Reiter Dateien hinzu.",
+      "noLinks": "Keine Links gefunden. Fügen Sie über die Schaltfläche oben oder im Reiter Dateien einen Link hinzu.",
       "openLink": "Link öffnen"
+    },
+    "workoutLink": {
+      "selectLink": "Link auswählen",
+      "selectLinkPlaceholder": "Einen Link aus den Kundendateien wählen...",
+      "noLinks": "Keine Links gefunden. Fügen Sie über die Schaltfläche oben oder im Reiter Dateien einen Link hinzu.",
+      "openLink": "Link öffnen"
+    },
+    "inlineLink": {
+      "addLink": "+ Link hinzufügen",
+      "save": "Link speichern",
+      "titlePlaceholderMetrics": "z.B. Google Sheets - Metriken",
+      "titlePlaceholderWorkout": "z.B. Google Docs - Trainingsplan"
     },
     "configuredMetrics": "Konfigurierte Metriken",
     "noMetrics": "Keine Metriken konfiguriert.",
@@ -721,6 +733,12 @@
       }
     },
     "monthResetHint": "Jeder Monat beginnt bei Null — legen Sie den erwarteten Betrag für jeden Kunden fest, bevor Sie als bezahlt markieren.",
+    "monthResetHintWithCarryover": "Jeder Monat beginnt bei Null, aber es gibt offene Beträge aus Vormonaten. Überprüfen Sie die markierten Kunden unten.",
+    "carryoverAlert": "{{amount}} an offenen Beträgen aus Vormonaten",
+    "carryoverAlertHint": "Diese Beträge wurden aus Vormonaten übertragen und sind noch nicht beglichen.",
+    "carryoverLabel": "offener Vormonat",
+    "carryoverBadge": "Offener Vormonat",
+    "carryoverDetail": "Offener Vormonat: {{amount}}",
     "editExpected": "Erwarteten Betrag bearbeiten",
     "expectedError": "Fehler beim Aktualisieren des erwarteten Betrags.",
     "expectedModal": {

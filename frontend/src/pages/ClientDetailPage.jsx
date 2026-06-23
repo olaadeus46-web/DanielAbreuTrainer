@@ -4,7 +4,7 @@ import { clientsApi, metricsApi, photosApi, packagesApi } from '../services/api'
 import { useTranslation } from 'react-i18next';
 import useMediaQuery from '../hooks/useMediaQuery';
 import BrandLoadingScreen from '../components/ui/BrandLoadingScreen';
-import ClientAnalytics from '../components/metrics/ClientAnalytics';
+
 import { useAppFeedback } from '../components/ui/FeedbackProvider';
 
 const card = {
@@ -258,7 +258,6 @@ export default function ClientDetailPage() {
   const isTablet = useMediaQuery('(max-width: 1100px)');
 
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [dashboardView, setDashboardView] = useState('overview');
   const [client, setClient] = useState(null);
   const [dashboardEntries, setDashboardEntries] = useState([]);
   const [checkIns, setCheckIns] = useState([]);
@@ -296,11 +295,6 @@ export default function ClientDetailPage() {
   const [feedbackSortOrder, setFeedbackSortOrder] = useState('desc');
   const [expandedCheckIns, setExpandedCheckIns] = useState({});
   const [expandedFeedback, setExpandedFeedback] = useState({});
-  const [recordsSearch, setRecordsSearch] = useState('');
-  const [recordsFrom, setRecordsFrom] = useState('');
-  const [recordsTo, setRecordsTo] = useState('');
-  const [recordsPage, setRecordsPage] = useState(1);
-  const [recordsPageSize, setRecordsPageSize] = useState(10);
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [originalProfileForm, setOriginalProfileForm] = useState({});
@@ -332,10 +326,15 @@ export default function ClientDetailPage() {
   });
 
   const [checkInForm, setCheckInForm] = useState(emptyCheckInForm);
-  const [selectedWorkoutPdfId, setSelectedWorkoutPdfId] = useState('');
-  const [workoutPdfBlobUrl, setWorkoutPdfBlobUrl] = useState(null);
-  const [loadingWorkoutPdf, setLoadingWorkoutPdf] = useState(false);
   const [selectedMetricsLinkId, setSelectedMetricsLinkId] = useState('');
+  const [selectedWorkoutLinkId, setSelectedWorkoutLinkId] = useState('');
+  const [addingMetricsLink, setAddingMetricsLink] = useState(false);
+  const [addingWorkoutLink, setAddingWorkoutLink] = useState(false);
+  const [newMetricsLinkTitle, setNewMetricsLinkTitle] = useState('');
+  const [newMetricsLinkUrl, setNewMetricsLinkUrl] = useState('');
+  const [newWorkoutLinkTitle, setNewWorkoutLinkTitle] = useState('');
+  const [newWorkoutLinkUrl, setNewWorkoutLinkUrl] = useState('');
+  const [savingInlineLink, setSavingInlineLink] = useState(false);
 
   const [galleryForm, setGalleryForm] = useState({ takenAt: '', notes: '', tags: '' });
   const [galleryPhotoFile, setGalleryPhotoFile] = useState(null);
@@ -470,33 +469,6 @@ export default function ClientDetailPage() {
     return () => window.clearInterval(intervalId);
   }, [activeTab, id]);
 
-  useEffect(() => {
-    if (!selectedWorkoutPdfId) {
-      if (workoutPdfBlobUrl) {
-        URL.revokeObjectURL(workoutPdfBlobUrl);
-        setWorkoutPdfBlobUrl(null);
-      }
-      return;
-    }
-    let cancelled = false;
-    setLoadingWorkoutPdf(true);
-    clientsApi.downloadFileItem(id, selectedWorkoutPdfId)
-      .then((res) => {
-        if (cancelled) return;
-        const url = URL.createObjectURL(res.data);
-        setWorkoutPdfBlobUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return url;
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setWorkoutPdfBlobUrl(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingWorkoutPdf(false);
-      });
-    return () => { cancelled = true; };
-  }, [selectedWorkoutPdfId, id]);
 
   const payment = client?.payments?.[0];
   const initials = client?.name?.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
@@ -511,18 +483,6 @@ export default function ClientDetailPage() {
         value: e.valueNumber,
       }));
   }, [dashboardEntries, weightDef, locale]);
-
-  const allPdfFiles = useMemo(() => {
-    const pdfs = [];
-    for (const folder of fileFolders) {
-      for (const item of folder.items || []) {
-        if (item.type === 'FILE' && item.mimeType === 'application/pdf') {
-          pdfs.push({ ...item, folderName: folder.name });
-        }
-      }
-    }
-    return pdfs;
-  }, [fileFolders]);
 
   const allLinkItems = useMemo(() => {
     const links = [];
@@ -541,55 +501,20 @@ export default function ClientDetailPage() {
     [allLinkItems, selectedMetricsLinkId],
   );
 
+  const selectedWorkoutLink = useMemo(
+    () => allLinkItems.find((item) => item.id === selectedWorkoutLinkId) || null,
+    [allLinkItems, selectedWorkoutLinkId],
+  );
+
   const tabs = [
     ['dashboard', t('clientDetail.tabs.dashboard')],
     ['profile', t('clientDetail.tabs.profile')],
     ['metrics', t('clientDetail.tabs.metrics')],
+    ['workout', t('clientDetail.tabs.workout')],
     ['files', t('clientDetail.tabs.files')],
     ['checkins', t('clientDetail.tabs.checkins')],
     ['feedback', t('clientDetail.tabs.feedback')],
-    ['workout', t('clientDetail.tabs.workout')],
   ];
-
-  const filteredMetricRecords = useMemo(() => {
-    const search = recordsSearch.trim().toLowerCase();
-    const fromTs = recordsFrom ? new Date(`${recordsFrom}T00:00:00`).getTime() : null;
-    const toTs = recordsTo ? new Date(`${recordsTo}T23:59:59`).getTime() : null;
-
-    return [...allEntries]
-      .filter((entry) => {
-        const ts = new Date(entry.recordedAt).getTime();
-        if (fromTs && ts < fromTs) return false;
-        if (toTs && ts > toTs) return false;
-        if (!search) return true;
-
-        const text = [
-          entry.metricDefinition?.name,
-          entry.metricDefinition?.type,
-          entry.metricDefinition?.unit,
-          formatMetricValue(entry),
-        ].join(' ').toLowerCase();
-
-        return text.includes(search);
-      })
-      .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
-  }, [allEntries, recordsFrom, recordsSearch, recordsTo]);
-
-  const metricRecordsTotalPages = Math.max(1, Math.ceil(filteredMetricRecords.length / recordsPageSize));
-  const metricRecordsPageRows = useMemo(() => {
-    const start = (recordsPage - 1) * recordsPageSize;
-    return filteredMetricRecords.slice(start, start + recordsPageSize);
-  }, [filteredMetricRecords, recordsPage, recordsPageSize]);
-
-  useEffect(() => {
-    setRecordsPage(1);
-  }, [recordsSearch, recordsFrom, recordsTo, recordsPageSize]);
-
-  useEffect(() => {
-    if (recordsPage > metricRecordsTotalPages) {
-      setRecordsPage(metricRecordsTotalPages);
-    }
-  }, [recordsPage, metricRecordsTotalPages]);
 
   const selectedFileFolder = useMemo(
     () => fileFolders.find((folder) => folder.id === selectedFolderId) || null,
@@ -761,6 +686,65 @@ export default function ClientDetailPage() {
     fontSize: 13,
     color: '#10253C',
     background: '#FFFFFF',
+  };
+
+  const ensureFolderAndCreateLink = async (folderName, title, externalUrl) => {
+    let targetFolder = fileFolders.find((f) => f.name === folderName);
+    if (!targetFolder) {
+      const { data: folder } = await clientsApi.createFileFolder(id, { name: folderName });
+      targetFolder = { ...folder, items: [] };
+      setFileFolders((prev) => [...prev, targetFolder].sort((a, b) => a.name.localeCompare(b.name)));
+    }
+    const formData = new FormData();
+    formData.append('folderId', targetFolder.id);
+    formData.append('type', 'LINK');
+    formData.append('title', title);
+    formData.append('externalUrl', externalUrl);
+    const { data: item } = await clientsApi.createFileItem(id, formData);
+    setFileFolders((prev) => prev.map((folder) => (
+      folder.id === targetFolder.id
+        ? { ...folder, items: [item, ...(folder.items || [])] }
+        : folder
+    )));
+    return item;
+  };
+
+  const saveInlineMetricsLink = async () => {
+    const title = newMetricsLinkTitle.trim();
+    const url = newMetricsLinkUrl.trim();
+    if (!title || !url) { showWarning(t('clientDetail.filesManager.fillLinkFields')); return; }
+    setSavingInlineLink(true);
+    try {
+      const item = await ensureFolderAndCreateLink(t('clientDetail.tabs.metrics'), title, url);
+      setNewMetricsLinkTitle('');
+      setNewMetricsLinkUrl('');
+      setAddingMetricsLink(false);
+      setSelectedMetricsLinkId(item.id);
+      showSuccess(t('clientDetail.filesManager.createLinkSuccess'));
+    } catch (err) {
+      showError(err.response?.data?.error || t('clientDetail.filesManager.createLinkError'));
+    } finally {
+      setSavingInlineLink(false);
+    }
+  };
+
+  const saveInlineWorkoutLink = async () => {
+    const title = newWorkoutLinkTitle.trim();
+    const url = newWorkoutLinkUrl.trim();
+    if (!title || !url) { showWarning(t('clientDetail.filesManager.fillLinkFields')); return; }
+    setSavingInlineLink(true);
+    try {
+      const item = await ensureFolderAndCreateLink(t('clientDetail.tabs.workout'), title, url);
+      setNewWorkoutLinkTitle('');
+      setNewWorkoutLinkUrl('');
+      setAddingWorkoutLink(false);
+      setSelectedWorkoutLinkId(item.id);
+      showSuccess(t('clientDetail.filesManager.createLinkSuccess'));
+    } catch (err) {
+      showError(err.response?.data?.error || t('clientDetail.filesManager.createLinkError'));
+    } finally {
+      setSavingInlineLink(false);
+    }
   };
 
   const labelStyle = {
@@ -1204,189 +1188,53 @@ export default function ClientDetailPage() {
 
       {activeTab === 'dashboard' && (
         <>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 16, background: '#FFFFFF', padding: 6, borderRadius: 14, width: 'fit-content', border: '1px solid rgba(159,189,217,0.24)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
             {[
-              ['overview', t('clientDetail.dashboardOverviewTab')],
-              ['records', t('clientDetail.dashboardRecordsTab')],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setDashboardView(key)}
-                style={{
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '8px 12px',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: dashboardView === key ? '#10253C' : 'transparent',
-                  color: dashboardView === key ? '#FFFFFF' : '#6B86A3',
-                }}
-              >
-                {label}
-              </button>
+              { label: t('clientDetail.initialWeight'), val: client.initialWeight ? `${client.initialWeight} kg` : '—', accent: '#10253C' },
+              { label: t('clientDetail.programStart'), val: formatDisplayDate(client.startDate, locale), accent: '#5682B1' },
+              { label: t('clientDetail.entries30d'), val: dashboardEntries.length, accent: '#B66A17' },
+              { label: t('clientDetail.checkinsCount'), val: checkIns.length, accent: '#2D7A47' },
+            ].map(({ label, val, accent }) => (
+              <div key={label} style={{ ...card, marginBottom: 0, padding: '18px 20px', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', inset: '0 auto auto 0', width: 6, height: '100%', background: accent }} />
+                <div style={{ marginLeft: 8 }}>
+                  <div style={{ fontSize: 11, color: '#6B86A3', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+                  <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: '#10253C' }}>{val}</div>
+                  <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 4 }}>{t('clientDetail.dashboardSummary')}</div>
+                </div>
+              </div>
             ))}
           </div>
 
-          {dashboardView === 'overview' && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-                {[
-                  { label: t('clientDetail.initialWeight'), val: client.initialWeight ? `${client.initialWeight} kg` : '—', accent: '#10253C' },
-                  { label: t('clientDetail.programStart'), val: formatDisplayDate(client.startDate, locale), accent: '#5682B1' },
-                  { label: t('clientDetail.entries30d'), val: dashboardEntries.length, accent: '#B66A17' },
-                  { label: t('clientDetail.checkinsCount'), val: checkIns.length, accent: '#2D7A47' },
-                ].map(({ label, val, accent }) => (
-                  <div key={label} style={{ ...card, marginBottom: 0, padding: '18px 20px', position: 'relative', overflow: 'hidden' }}>
-                    <div style={{ position: 'absolute', inset: '0 auto auto 0', width: 6, height: '100%', background: accent }} />
-                    <div style={{ marginLeft: 8 }}>
-                      <div style={{ fontSize: 11, color: '#6B86A3', fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-                      <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: '#10253C' }}>{val}</div>
-                      <div style={{ fontSize: 12, color: '#6B86A3', marginTop: 4 }}>{t('clientDetail.dashboardSummary')}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : '0.9fr 1.1fr', gap: 16 }}>
-                {weightData.length > 0 ? (
-                  <div style={card}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#000000', marginBottom: 12 }}>{t('clientDetail.weightEvolution')}</div>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      {weightData.map((p) => (
-                        <div key={`${p.date}-${p.value}`} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 60px', alignItems: 'center', gap: 10 }}>
-                          <span style={{ fontSize: 11, color: '#739EC9' }}>{p.date}</span>
-                          <div style={{ height: 8, borderRadius: 99, background: '#FFFFFF', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${Math.max(8, (p.value / 120) * 100)}%`, background: 'linear-gradient(90deg, #5682B1, #739EC9)' }} />
-                          </div>
-                          <span style={{ fontSize: 12, color: '#000000', fontWeight: 700 }}>{p.value} kg</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {client.notes ? (
-                  <div style={card}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#000000', marginBottom: 10 }}>{t('clientDetail.notes')}</div>
-                    <p style={{ fontSize: 13, color: '#5682B1', lineHeight: 1.7 }}>{client.notes}</p>
-                  </div>
-                ) : null}
-
-                {!weightData.length && !client.notes ? (
-                  <div style={{ ...card, fontSize: 13, color: '#6B86A3' }}>{profileSummary}</div>
-                ) : null}
-              </div>
-
+          <div style={{ display: 'grid', gridTemplateColumns: isTablet ? '1fr' : '0.9fr 1.1fr', gap: 16 }}>
+            {weightData.length > 0 ? (
               <div style={card}>
-                <ClientAnalytics
-                  definitions={definitions}
-                  allEntries={allEntries}
-                  locale={locale}
-                />
-              </div>
-            </>
-          )}
-
-          {dashboardView === 'records' && (
-            <div style={card}>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr auto', gap: 10, marginBottom: 12 }}>
-                <input
-                  type="text"
-                  value={recordsSearch}
-                  onChange={(e) => setRecordsSearch(e.target.value)}
-                  placeholder={t('clientDetail.metricRecords.searchPlaceholder')}
-                  style={fieldStyle}
-                />
-                <input type="date" value={recordsFrom} onChange={(e) => setRecordsFrom(e.target.value)} style={fieldStyle} />
-                <input type="date" value={recordsTo} onChange={(e) => setRecordsTo(e.target.value)} style={fieldStyle} />
-                <select value={recordsPageSize} onChange={(e) => setRecordsPageSize(Number(e.target.value))} style={fieldStyle}>
-                  {[10, 20, 50].map((size) => (
-                    <option key={size} value={size}>{size} / {t('clientDetail.metricRecords.page')}</option>
-                  ))}
-                </select>
-              </div>
-
-              {isMobile ? (
-                <div style={{ display: 'grid', gap: 10 }}>
-                  {metricRecordsPageRows.map((entry) => (
-                    <div key={entry.id} style={{ border: '1px solid rgba(159,189,217,0.28)', borderRadius: 12, padding: '10px 10px 9px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: '#10253C' }}>{entry.metricDefinition?.name || '-'}</div>
-                        <div style={{ fontSize: 11, color: '#6B86A3', whiteSpace: 'nowrap' }}>{formatDisplayDate(entry.recordedAt, locale)}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#000000', marginBottom: 12 }}>{t('clientDetail.weightEvolution')}</div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {weightData.map((p) => (
+                    <div key={`${p.date}-${p.value}`} style={{ display: 'grid', gridTemplateColumns: '70px 1fr 60px', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 11, color: '#739EC9' }}>{p.date}</span>
+                      <div style={{ height: 8, borderRadius: 99, background: '#FFFFFF', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.max(8, (p.value / 120) * 100)}%`, background: 'linear-gradient(90deg, #5682B1, #739EC9)' }} />
                       </div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                        <span style={{ fontSize: 11, borderRadius: 999, padding: '4px 8px', background: '#EDF5FC', color: '#2C4F73', fontWeight: 700 }}>{entry.metricDefinition?.type || '-'}</span>
-                        <span style={{ fontSize: 11, borderRadius: 999, padding: '4px 8px', background: '#F3F8FD', color: '#4E6B85', fontWeight: 700 }}>{entry.metricDefinition?.unit || '-'}</span>
-                      </div>
-                      <div style={{ marginTop: 8, fontSize: 13, color: '#10253C' }}>
-                        {t('clientDetail.metricRecords.colValue')}: <strong>{formatMetricValue(entry)}</strong>
-                      </div>
+                      <span style={{ fontSize: 12, color: '#000000', fontWeight: 700 }}>{p.value} kg</span>
                     </div>
                   ))}
-                  {metricRecordsPageRows.length === 0 ? (
-                    <div style={{ padding: '10px 8px', textAlign: 'center', color: '#6B86A3', fontSize: 13 }}>{t('clientDetail.metricRecords.empty')}</div>
-                  ) : null}
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid rgba(159,189,217,0.24)' }}>
-                        {[t('clientDetail.metricRecords.colDate'), t('clientDetail.metricRecords.colMetric'), t('clientDetail.metricRecords.colType'), t('clientDetail.metricRecords.colValue'), t('clientDetail.metricRecords.colUnit')].map((label, index) => (
-                          <th key={label} style={{ textAlign: index === 0 ? 'left' : 'center', padding: '8px 8px 12px', color: '#6B86A3', fontSize: 11, letterSpacing: '0.08em', fontWeight: 700 }}>{label.toUpperCase()}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {metricRecordsPageRows.map((entry, index) => (
-                        <tr key={entry.id} style={{ borderBottom: index < metricRecordsPageRows.length - 1 ? '1px solid rgba(159,189,217,0.24)' : 'none' }}>
-                          <td style={{ padding: '11px 8px 11px 0', color: '#10253C', fontWeight: 700 }}>{formatDisplayDate(entry.recordedAt, locale)}</td>
-                          <td style={{ textAlign: 'center', padding: '11px 8px', color: '#10253C' }}>{entry.metricDefinition?.name || '-'}</td>
-                          <td style={{ textAlign: 'center', padding: '11px 8px', color: '#6B86A3' }}>{entry.metricDefinition?.type || '-'}</td>
-                          <td style={{ textAlign: 'center', padding: '11px 8px', color: '#10253C', fontWeight: 700 }}>{formatMetricValue(entry)}</td>
-                          <td style={{ textAlign: 'center', padding: '11px 8px', color: '#6B86A3' }}>{entry.metricDefinition?.unit || '-'}</td>
-                        </tr>
-                      ))}
-                      {metricRecordsPageRows.length === 0 && (
-                        <tr>
-                          <td colSpan={5} style={{ padding: '14px 8px', textAlign: 'center', color: '#6B86A3' }}>{t('clientDetail.metricRecords.empty')}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 12, color: '#6B86A3' }}>
-                  {t('clientDetail.metricRecords.results', { count: filteredMetricRecords.length })}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => setRecordsPage((prev) => Math.max(1, prev - 1))}
-                    disabled={recordsPage <= 1}
-                    style={{ border: '1px solid #9FBDD9', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', color: '#2C4F73', cursor: recordsPage <= 1 ? 'not-allowed' : 'pointer', opacity: recordsPage <= 1 ? 0.6 : 1 }}
-                  >
-                    {t('clientDetail.metricRecords.prev')}
-                  </button>
-                  <span style={{ fontSize: 12, color: '#10253C', fontWeight: 700 }}>
-                    {t('clientDetail.metricRecords.page')} {recordsPage} / {metricRecordsTotalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setRecordsPage((prev) => Math.min(metricRecordsTotalPages, prev + 1))}
-                    disabled={recordsPage >= metricRecordsTotalPages}
-                    style={{ border: '1px solid #9FBDD9', background: '#FFFFFF', borderRadius: 8, fontSize: 12, padding: '6px 10px', color: '#2C4F73', cursor: recordsPage >= metricRecordsTotalPages ? 'not-allowed' : 'pointer', opacity: recordsPage >= metricRecordsTotalPages ? 0.6 : 1 }}
-                  >
-                    {t('clientDetail.metricRecords.next')}
-                  </button>
                 </div>
               </div>
-            </div>
-          )}
+            ) : null}
+
+            {client.notes ? (
+              <div style={card}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#000000', marginBottom: 10 }}>{t('clientDetail.notes')}</div>
+                <p style={{ fontSize: 13, color: '#5682B1', lineHeight: 1.7 }}>{client.notes}</p>
+              </div>
+            ) : null}
+
+            {!weightData.length && !client.notes ? (
+              <div style={{ ...card, fontSize: 13, color: '#6B86A3' }}>{profileSummary}</div>
+            ) : null}
+          </div>
         </>
       )}
 
@@ -1616,8 +1464,15 @@ export default function ClientDetailPage() {
       {activeTab === 'metrics' && (
         <>
           <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px', background: 'linear-gradient(135deg, #FFFFFF 0%, #F4F8FC 100%)' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#5682B1', marginBottom: 12 }}>
-              {t('clientDetail.tabs.metrics')}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#5682B1' }}>
+                {t('clientDetail.tabs.metrics')}
+              </div>
+              {!addingMetricsLink && (
+                <QuickActionButton onClick={() => setAddingMetricsLink(true)} primary>
+                  {t('clientDetail.inlineLink.addLink')}
+                </QuickActionButton>
+              )}
             </div>
             <div>
               <label style={labelStyle}>{t('clientDetail.metricsLink.selectLink')}</label>
@@ -1634,12 +1489,36 @@ export default function ClientDetailPage() {
                 ))}
               </select>
             </div>
-            {allLinkItems.length === 0 && (
+            {allLinkItems.length === 0 && !addingMetricsLink && (
               <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 14, background: '#F4F8FC', border: '1px solid #D6E2EF', fontSize: 13, color: '#739EC9', lineHeight: 1.6 }}>
                 {t('clientDetail.metricsLink.noLinks')}
               </div>
             )}
           </div>
+
+          {addingMetricsLink && (
+            <div style={{ ...card, padding: isMobile ? '16px' : '20px 24px' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#10253C', marginBottom: 12 }}>{t('clientDetail.inlineLink.addLink')}</div>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>{t('clientDetail.filesManager.linkTitle')}</label>
+                  <input type="text" value={newMetricsLinkTitle} onChange={(e) => setNewMetricsLinkTitle(e.target.value)} placeholder={t('clientDetail.inlineLink.titlePlaceholderMetrics')} style={fieldStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t('clientDetail.filesManager.linkFieldLabel')}</label>
+                  <input type="url" value={newMetricsLinkUrl} onChange={(e) => setNewMetricsLinkUrl(e.target.value)} placeholder={t('clientDetail.filesManager.linkFieldPlaceholder')} style={fieldStyle} />
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <QuickActionButton onClick={() => { setAddingMetricsLink(false); setNewMetricsLinkTitle(''); setNewMetricsLinkUrl(''); }}>
+                    {t('common.cancel')}
+                  </QuickActionButton>
+                  <QuickActionButton onClick={saveInlineMetricsLink} disabled={savingInlineLink} primary>
+                    {savingInlineLink ? t('clientDetail.filesManager.saving') : t('clientDetail.inlineLink.save')}
+                  </QuickActionButton>
+                </div>
+              </div>
+            </div>
+          )}
 
           {selectedMetricsLink && (
             <>
@@ -2355,45 +2234,110 @@ export default function ClientDetailPage() {
       {activeTab === 'workout' && (
         <>
           <div style={{ ...card, padding: isMobile ? '18px 16px' : '22px 24px', background: 'linear-gradient(135deg, #FFFFFF 0%, #F4F8FC 100%)' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#5682B1' }}>
-              {t('clientDetail.tabs.workout')}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#5682B1' }}>
+                {t('clientDetail.tabs.workout')}
+              </div>
+              {!addingWorkoutLink && (
+                <QuickActionButton onClick={() => setAddingWorkoutLink(true)} primary>
+                  {t('clientDetail.inlineLink.addLink')}
+                </QuickActionButton>
+              )}
             </div>
-            <div style={{ marginTop: 12 }}>
-              <label style={labelStyle}>{t('clientDetail.selectPdf')}</label>
+            <div>
+              <label style={labelStyle}>{t('clientDetail.workoutLink.selectLink')}</label>
               <select
-                value={selectedWorkoutPdfId}
-                onChange={(e) => setSelectedWorkoutPdfId(e.target.value)}
+                value={selectedWorkoutLinkId}
+                onChange={(e) => setSelectedWorkoutLinkId(e.target.value)}
                 style={fieldStyle}
               >
-                <option value="">{t('clientDetail.selectPdfPlaceholder')}</option>
-                {allPdfFiles.map((file) => (
-                  <option key={file.id} value={file.id}>
-                    {file.title || file.fileName} ({file.folderName})
+                <option value="">{t('clientDetail.workoutLink.selectLinkPlaceholder')}</option>
+                {allLinkItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title} ({item.folderName})
                   </option>
                 ))}
               </select>
             </div>
-            {allPdfFiles.length === 0 && (
+            {allLinkItems.length === 0 && !addingWorkoutLink && (
               <div style={{ marginTop: 12, padding: '14px 16px', borderRadius: 14, background: '#F4F8FC', border: '1px solid #D6E2EF', fontSize: 13, color: '#739EC9', lineHeight: 1.6 }}>
-                {t('clientDetail.noPdfsFound')}
+                {t('clientDetail.workoutLink.noLinks')}
               </div>
             )}
           </div>
 
-          {loadingWorkoutPdf && (
-            <div style={{ ...card, padding: '40px 24px', textAlign: 'center' }}>
-              <div style={{ fontSize: 13, color: '#739EC9' }}>{t('common.loading')}</div>
+          {addingWorkoutLink && (
+            <div style={{ ...card, padding: isMobile ? '16px' : '20px 24px' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#10253C', marginBottom: 12 }}>{t('clientDetail.inlineLink.addLink')}</div>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>{t('clientDetail.filesManager.linkTitle')}</label>
+                  <input type="text" value={newWorkoutLinkTitle} onChange={(e) => setNewWorkoutLinkTitle(e.target.value)} placeholder={t('clientDetail.inlineLink.titlePlaceholderWorkout')} style={fieldStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t('clientDetail.filesManager.linkFieldLabel')}</label>
+                  <input type="url" value={newWorkoutLinkUrl} onChange={(e) => setNewWorkoutLinkUrl(e.target.value)} placeholder={t('clientDetail.filesManager.linkFieldPlaceholder')} style={fieldStyle} />
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <QuickActionButton onClick={() => { setAddingWorkoutLink(false); setNewWorkoutLinkTitle(''); setNewWorkoutLinkUrl(''); }}>
+                    {t('common.cancel')}
+                  </QuickActionButton>
+                  <QuickActionButton onClick={saveInlineWorkoutLink} disabled={savingInlineLink} primary>
+                    {savingInlineLink ? t('clientDetail.filesManager.saving') : t('clientDetail.inlineLink.save')}
+                  </QuickActionButton>
+                </div>
+              </div>
             </div>
           )}
 
-          {!loadingWorkoutPdf && workoutPdfBlobUrl && (
-            <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-              <iframe
-                src={workoutPdfBlobUrl}
-                title={t('clientDetail.tabs.workout')}
-                style={{ width: '100%', height: isMobile ? 500 : 800, border: 'none', display: 'block' }}
-              />
-            </div>
+          {selectedWorkoutLink && (
+            <>
+              <div style={{ ...card, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#10253C' }}>{selectedWorkoutLink.title}</div>
+                  <div style={{ fontSize: 12, color: '#739EC9', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selectedWorkoutLink.externalUrl}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => window.open(selectedWorkoutLink.externalUrl, '_blank', 'noopener,noreferrer')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '10px 18px',
+                    border: 'none',
+                    borderRadius: 12,
+                    background: '#5682B1',
+                    color: '#FFFFFF',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                  {t('clientDetail.workoutLink.openLink')}
+                </button>
+              </div>
+
+              {getEmbedUrl(selectedWorkoutLink.externalUrl) && (
+                <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+                  <iframe
+                    src={getEmbedUrl(selectedWorkoutLink.externalUrl)}
+                    title={selectedWorkoutLink.title}
+                    style={{ width: '100%', height: isMobile ? 500 : 700, border: 'none', display: 'block' }}
+                    sandbox="allow-scripts allow-same-origin allow-popups"
+                  />
+                </div>
+              )}
+            </>
           )}
         </>
       )}

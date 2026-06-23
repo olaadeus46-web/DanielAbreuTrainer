@@ -330,8 +330,20 @@
     "metricsLink": {
       "selectLink": "Selecionar um link",
       "selectLinkPlaceholder": "Escolhe um link dos ficheiros do cliente...",
-      "noLinks": "Nenhum link encontrado. Adiciona um link no separador Ficheiros primeiro.",
+      "noLinks": "Nenhum link encontrado. Adiciona um link pelo botão acima ou no separador Arquivos.",
       "openLink": "Abrir link"
+    },
+    "workoutLink": {
+      "selectLink": "Selecionar um link",
+      "selectLinkPlaceholder": "Escolhe um link dos ficheiros do cliente...",
+      "noLinks": "Nenhum link encontrado. Adiciona um link pelo botão acima ou no separador Arquivos.",
+      "openLink": "Abrir link"
+    },
+    "inlineLink": {
+      "addLink": "+ Adicionar link",
+      "save": "Guardar link",
+      "titlePlaceholderMetrics": "Ex: Google Sheets - Métricas",
+      "titlePlaceholderWorkout": "Ex: Google Docs - Plano de Treino"
     },
     "configuredMetrics": "Métricas configuradas",
     "noMetrics": "Nenhuma métrica configurada.",
@@ -748,6 +760,12 @@
       }
     },
     "monthResetHint": "Cada mês começa do zero — defina o valor esperado para cada cliente antes de marcar como pago.",
+    "monthResetHintWithCarryover": "Cada mês começa do zero, mas há valores pendentes de meses anteriores que transitaram. Consulta os clientes sinalizados abaixo.",
+    "carryoverAlert": "{{amount}} em valores pendentes de meses anteriores",
+    "carryoverAlertHint": "Estes valores transitaram de meses anteriores e ainda não foram liquidados.",
+    "carryoverLabel": "pendente anterior",
+    "carryoverBadge": "Pendente anterior",
+    "carryoverDetail": "Pendente anterior: {{amount}}",
     "editExpected": "Editar valor esperado",
     "expectedError": "Erro ao atualizar o valor esperado.",
     "expectedModal": {

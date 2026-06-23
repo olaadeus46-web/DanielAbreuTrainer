@@ -75,6 +75,36 @@ app.use('/api/finance',      financeRoutes);
 app.use('/api/packages',     packageRoutes);
 app.use('/api/automations',  automationRoutes);
 
+// ── Cron endpoint (called by Netlify Scheduled Function) ────
+app.post('/api/cron/run-automations', async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.headers['x-cron-secret'] !== secret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const now = Date.now();
+    const pending = await prisma.automation.findMany({
+      where: { status: 'PENDING', sendMode: 'SCHEDULED' },
+    });
+    const due = pending.filter((a) => a.scheduledAt && new Date(a.scheduledAt).getTime() <= now);
+    const results = [];
+    for (const automation of due) {
+      try {
+        console.log(`[cron] Executing automation: ${automation.name} (${automation.id})`);
+        await executeAutomationById(automation.id);
+        results.push({ id: automation.id, status: 'executed' });
+      } catch (err) {
+        console.error(`[cron] Failed automation ${automation.id}:`, err.message);
+        results.push({ id: automation.id, status: 'failed', error: err.message });
+      }
+    }
+    res.json({ executed: results.length, results });
+  } catch (err) {
+    console.error('[cron] Scheduler error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Error Handling ───────────────────────────────────────────
 app.use(notFoundHandler);
 app.use(errorHandler);
