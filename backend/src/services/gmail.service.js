@@ -43,12 +43,9 @@ export async function getGmailEmail(refreshToken) {
   return data.email;
 }
 
-export async function sendEmail({ refreshToken, senderEmail, to, subject, html, attachments = [] }) {
-  const oauth2 = getOAuth2Client();
-  oauth2.setCredentials({ refresh_token: refreshToken });
-
-  const gmail = google.gmail({ version: 'v1', auth: oauth2 });
-
+// Builds the base64url-encoded RFC 5322 message the Gmail API expects.
+// Pure/network-free so it can be unit tested independently of OAuth + the Gmail API call.
+export async function composeRawMessage({ senderEmail, to, subject, html, attachments = [] }) {
   const mailComposer = nodemailer.createTransport({ streamTransport: true, buffer: true });
   const message = await mailComposer.sendMail({
     from: senderEmail,
@@ -63,10 +60,18 @@ export async function sendEmail({ refreshToken, senderEmail, to, subject, html, 
     })),
   });
 
-  const raw = message.message.toString('base64')
+  return message.message.toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
+}
+
+export async function sendEmail({ refreshToken, senderEmail, to, subject, html, attachments = [] }) {
+  const oauth2 = getOAuth2Client();
+  oauth2.setCredentials({ refresh_token: refreshToken });
+
+  const gmail = google.gmail({ version: 'v1', auth: oauth2 });
+  const raw = await composeRawMessage({ senderEmail, to, subject, html, attachments });
 
   const result = await gmail.users.messages.send({
     userId: 'me',
