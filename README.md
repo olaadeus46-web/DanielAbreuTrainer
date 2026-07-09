@@ -1,7 +1,7 @@
 # Daniel Abreu Personal Trainer
 
 <p align="center">
-  <img src="./Daniel%20Abreu.png" alt="Daniel Abreu Personal Trainer" width="180" />
+  <img src="./docs/screenshots/Daniel%20Abreu.png" alt="Daniel Abreu Personal Trainer" width="180" />
 </p>
 
 A custom-built management platform for **Daniel Abreu**, a personal trainer based in Germany. This is not a generic SaaS — it was designed and developed specifically for Daniel to run his personal training business: manage clients, track body metrics, automate email campaigns, handle finances, and deliver a professional experience to his clients.
@@ -212,53 +212,53 @@ Open http://localhost:5173 in your browser.
 
 Overview of active clients, collection rate, unpaid follow-up list, and portfolio health cards.
 
-![Laptop Dashboard](./Laptop%20Dashboard.png)
+![Laptop Dashboard](./docs/screenshots/Laptop%20Dashboard.png)
 
 **Clients**
 
 Client roster sorted by operational priority, with fee, frequency, package, and quick profile access.
 
-![Laptop Client Dashboard](./Laptop%20Client%20Dashboard.png)
+![Laptop Client Dashboard](./docs/screenshots/Laptop%20Client%20Dashboard.png)
 
 **Finance**
 
 Financial control center with expected vs received values, pending revenue, collection rate, and client-by-client status.
 
-![Laptop Finance Dashboard](./Laptop%20Finance%20Dashboard.png)
+![Laptop Finance Dashboard](./docs/screenshots/Laptop%20Finance%20Dashboard.png)
 
 **Automations**
 
 Email campaign queue with automation status, sent campaigns, follow-up chains, and Gmail integration.
 
-![Laptop Automations Dashboard](./Laptop%20Automations%20Dashboard.png)
+![Laptop Automations Dashboard](./docs/screenshots/Laptop%20Automations%20Dashboard.png)
 
 **Individual Client**
 
 Detailed client workspace with profile summary, KPI cards, metrics analysis, check-ins, files, and training plan tabs.
 
-![Laptop Individual Client](./Laptop%20Individual%20Client.png)
+![Laptop Individual Client](./docs/screenshots/Laptop%20Individual%20Client.png)
 
 ### Mobile Views
 
 **Dashboard**
 
-![Mobile Dashboard](./mobile%20Dashboard.png)
+![Mobile Dashboard](./docs/screenshots/mobile%20Dashboard.png)
 
 **Clients**
 
-![Mobile Client Dashboard](./mobile%20Client%20Dashboard.png)
+![Mobile Client Dashboard](./docs/screenshots/mobile%20Client%20Dashboard.png)
 
 **Finance**
 
-![Mobile Finance Dashboard](./mobile%20Finance%20Dashboard.png)
+![Mobile Finance Dashboard](./docs/screenshots/mobile%20Finance%20Dashboard.png)
 
 **Automations**
 
-![Mobile Automations Dashboard](./mobile%20Automations%20Dashboard.png)
+![Mobile Automations Dashboard](./docs/screenshots/mobile%20Automations%20Dashboard.png)
 
 **Individual Client**
 
-![Mobile Individual Client](./mobile%20Individual%20Client.png)
+![Mobile Individual Client](./docs/screenshots/mobile%20Individual%20Client.png)
 
 ---
 
