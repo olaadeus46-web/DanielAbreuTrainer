@@ -4,7 +4,7 @@
   <img src="./docs/screenshots/Daniel%20Abreu.png" alt="Daniel Abreu Personal Trainer" width="180" />
 </p>
 
-A custom-built management platform for **Daniel Abreu**, a personal trainer based in Germany. This is not a generic SaaS — it was designed and developed specifically for Daniel to run his personal training business: manage clients, track body metrics, automate email campaigns, handle finances, and deliver a professional experience to his clients.
+A custom-built management platform for **Daniel Abreu**, a personal trainer based in Switzerland. This is not a generic SaaS — it was designed and developed specifically for Daniel to run his personal training business: manage clients, track body metrics, automate email campaigns, handle finances, and deliver a professional experience to his clients.
 
 **The app is live and in production at [danieltrainer.com](https://danieltrainer.com).**
 
